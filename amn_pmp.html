@@ -618,8 +618,8 @@ const STORE_KEY='amn_tracker_v1';
 // The newest build anyone opens records its number in the shared state
 // (st.meta.appBuild); a copy whose APP_BUILD is lower shows a "reopen from
 // SharePoint" banner. APP_VERSION_LABEL is the human-facing date, display only.
-const APP_BUILD=24;
-const APP_VERSION_LABEL='31 Jul 2026';
+const APP_BUILD=26;
+const APP_VERSION_LABEL='13 Aug 2026';
 
 let _sbSession=null;
 let _sbSaveTimer=null;
@@ -1782,7 +1782,7 @@ function renderLeaveModal(){
       </div>
       <div style="font-size:10px;color:var(--grey);margin-top:8px">Weekends and bank holidays don't count. Only Annual leave uses the allowance — unpaid leave is unlimited but discretionary.</div>`;
   }
-  el.innerHTML=`<div class="modal-overlay" onclick="if(event.target===this)closeLeaveModal()"><div style="background:#fff;border-radius:var(--r-lg);width:480px;max-width:94vw;box-shadow:0 8px 30px rgba(38,34,30,.25)">
+  el.innerHTML=`<div class="modal-overlay" onclick="if(event.target===this&&window._ovMd===this)closeLeaveModal()"><div style="background:#fff;border-radius:var(--r-lg);width:480px;max-width:94vw;box-shadow:0 8px 30px rgba(38,34,30,.25)">
     <div class="note-popover-hdr"><span>${title}</span><button onclick="closeLeaveModal()" style="background:none;border:none;cursor:pointer;font-size:14px;font-weight:700;color:var(--dkgrey)">×</button></div>
     <div style="padding:14px 16px;max-height:74vh;overflow:auto">${body}</div>
   </div></div>`;
@@ -2549,26 +2549,67 @@ function pFee(pn){const p=st.projects.find(x=>x.name===pn);if(!p)return 0;
 // Rules: an invoiced installment is always confirmed, and a paid one is always
 // invoiced (both enforced here and in updInvoice). paidDate = money received.
 function normInvList(a){if(!Array.isArray(a))return[];const out=[];for(const v of a){if(!v||typeof v!=='object')continue;
-  const pd=!!v.paid;out.push({id:typeof v.id==='string'&&v.id?v.id:crmId('iv'),amount:parseFloat(v.amount)||0,date:typeof v.date==='string'?v.date:'',ref:typeof v.ref==='string'?v.ref:'',invoiced:pd||!!v.invoiced,confirmed:pd||!!v.invoiced||!!v.confirmed,paid:pd,paidDate:pd&&typeof v.paidDate==='string'?v.paidDate:''});}
+  const pd=!!v.paid;out.push({id:typeof v.id==='string'&&v.id?v.id:crmId('iv'),amount:parseFloat(v.amount)||0,date:typeof v.date==='string'?v.date:'',ref:typeof v.ref==='string'?v.ref:'',invoiced:pd||!!v.invoiced,confirmed:pd||!!v.invoiced||!!v.confirmed,paid:pd,paidDate:pd&&typeof v.paidDate==='string'?v.paidDate:'',expenses:normInvExp(v.expenses)});}
   return out;}
 function normProjInvoices(p){p.invoices=normInvList(p.invoices);for(const ph of p.phases||[])ph.invoices=normInvList(ph.invoices);}
-function invSums(list){let conf=0,inv=0,all=0,n=0,paid=0;for(const v of list||[]){const a=parseFloat(v.amount)||0;n++;all+=a;if(v.confirmed)conf+=a;if(v.invoiced)inv+=a;if(v.paid)paid+=a;}return{conf,inv,all,n,paid};}
-function pInvSums(pn){const p=st.projects.find(x=>x.name===pn);if(!p)return{conf:0,inv:0,all:0,n:0,paid:0};
+function invSums(list){let conf=0,inv=0,all=0,n=0,paid=0,exp=0,expInv=0,expPaid=0;for(const v of list||[]){const a=parseFloat(v.amount)||0,x=invExpSum(v);n++;all+=a;exp+=x;if(v.confirmed)conf+=a;if(v.invoiced){inv+=a;expInv+=x;}if(v.paid){paid+=a;expPaid+=x;}}return{conf,inv,all,n,paid,exp,expInv,expPaid};}
+function pInvSums(pn){const p=st.projects.find(x=>x.name===pn);if(!p)return{conf:0,inv:0,all:0,n:0,paid:0,exp:0,expInv:0,expPaid:0};
   if(p.feeMode==='total')return invSums(p.invoices);
-  const t={conf:0,inv:0,all:0,n:0,paid:0};for(const ph of p.phases||[]){const s=invSums(ph.invoices);t.conf+=s.conf;t.inv+=s.inv;t.all+=s.all;t.n+=s.n;t.paid+=s.paid;}return t;}
+  const t={conf:0,inv:0,all:0,n:0,paid:0,exp:0,expInv:0,expPaid:0};for(const ph of p.phases||[]){const s=invSums(ph.invoices);t.conf+=s.conf;t.inv+=s.inv;t.all+=s.all;t.n+=s.n;t.paid+=s.paid;t.exp+=s.exp;t.expInv+=s.expInv;t.expPaid+=s.expPaid;}return t;}
 function invMismatch(conf,fee){return Math.abs((conf||0)-(fee||0))>0.005;}
 function gbpInv(n){n=Number(n||0);const p=Math.round(Math.abs(n)*100)%100!==0;return'£'+n.toLocaleString('en-GB',{minimumFractionDigits:p?2:0,maximumFractionDigits:p?2:0});}
-function invRowHtml(i,pi,v){
-  return `<div style="display:flex;align-items:center;gap:8px;background:#fff;padding:6px 10px;border:1px solid var(--mid);opacity:${v.confirmed?'1':'.55'}">
-    <input type="date" value="${v.date||''}" style="font-size:11px;width:132px" title="Invoice date — past = issued, future = planned" onchange="updInvoice(${i},${pi},'${jsq(v.id)}','date',this.value)"/>
-    <input type="text" value="${escAttr(v.ref||'')}" placeholder="ref / description" style="flex:1;min-width:90px;font-size:11px" onchange="updInvoice(${i},${pi},'${jsq(v.id)}','ref',this.value)"/>
+// ── Invoice expenses (Joe, 13 Aug): costs incurred on the client's behalf (an
+// OS map, a courier) attached to the invoice that bills them. Billed ON TOP of
+// the fee: they count in every cash figure (Invoiced/Paid/Outstanding, Income
+// page cells, VAT actuals) but NEVER against the stage fee — an expense must
+// not trigger the amber fee-mismatch warning.
+function normInvExp(a){if(!Array.isArray(a))return[];const out=[];for(const x of a){if(!x||typeof x!=='object')continue;out.push({id:typeof x.id==='string'&&x.id?x.id:crmId('ix'),desc:typeof x.desc==='string'?x.desc:'',amount:parseFloat(x.amount)||0,date:typeof x.date==='string'?x.date:''});}return out;}
+function invExpSum(v){let t=0;for(const x of (v&&v.expenses)||[])t+=parseFloat(x.amount)||0;return t;}
+function invAmt(v){return(parseFloat(v.amount)||0)+invExpSum(v);} // cash value: fee + expenses
+// Expense rows come in two variants matching their hosts:
+// invExpCells — CARD: cells of the shared invoice grid (below), so the date /
+// £ / amount boxes sit in the same tracks as the invoice's and always align.
+// invExpRowHtml — POPOVER: a flex line mirroring the popover's own widths.
+function invExpCells(i,pi,invId,x){
+  return `<input type="date" value="${x.date||''}" style="font-size:11px;width:100%;box-sizing:border-box" title="Date the expense was incurred" onchange="updInvExp(${i},${pi},'${jsq(invId)}','${jsq(x.id)}','date',this.value)"/>
+    <span style="display:flex;align-items:center;gap:6px;min-width:0"><span style="font-size:9px;color:var(--dkgrey);font-weight:700;letter-spacing:.06em">EXP</span><input type="text" value="${escAttr(x.desc||'')}" placeholder="e.g. OS map purchase" style="flex:1;min-width:0;font-size:11px" onchange="updInvExp(${i},${pi},'${jsq(invId)}','${jsq(x.id)}','desc',this.value)"/></span>
     <span style="font-size:11px;color:var(--dkgrey);font-weight:600">£</span>
-    <input type="number" step="0.01" min="0" value="${v.amount||''}" placeholder="0" style="width:90px;font-size:11px" onchange="updInvoice(${i},${pi},'${jsq(v.id)}','amount',this.value)"/>
+    <input type="number" step="0.01" min="0" value="${x.amount||''}" placeholder="0" style="width:100%;box-sizing:border-box;font-size:11px" onchange="updInvExp(${i},${pi},'${jsq(invId)}','${jsq(x.id)}','amount',this.value)"/>
+    <span style="grid-column:5/9"></span>
+    <span style="cursor:pointer;color:var(--danger);font-size:14px;font-weight:600;justify-self:center" onclick="delInvExp(${i},${pi},'${jsq(invId)}','${jsq(x.id)}')" title="Remove expense">×</span>`;
+}
+function invExpRowHtml(i,pi,invId,x){
+  return `<div style="display:flex;align-items:center;gap:6px">
+    <input type="date" value="${x.date||''}" style="font-size:11px;width:122px" title="Date the expense was incurred" onchange="updInvExp(${i},${pi},'${jsq(invId)}','${jsq(x.id)}','date',this.value)"/>
+    <span style="flex:1;min-width:50px;display:flex;align-items:center;gap:5px"><span style="font-size:9px;color:var(--dkgrey);font-weight:700;letter-spacing:.06em">EXP</span><input type="text" value="${escAttr(x.desc||'')}" placeholder="e.g. OS map purchase" style="flex:1;min-width:0;font-size:11px" onchange="updInvExp(${i},${pi},'${jsq(invId)}','${jsq(x.id)}','desc',this.value)"/></span>
+    <span style="font-size:11px;color:var(--dkgrey);font-weight:600">£</span>
+    <input type="number" step="0.01" min="0" value="${x.amount||''}" placeholder="0" style="width:76px;font-size:11px" onchange="updInvExp(${i},${pi},'${jsq(invId)}','${jsq(x.id)}','amount',this.value)"/>
+    <span style="cursor:pointer;color:var(--danger);font-size:15px;font-weight:600" onclick="delInvExp(${i},${pi},'${jsq(invId)}','${jsq(x.id)}')" title="Remove expense">×</span>
+  </div>`;
+}
+// One grid per invoice: 9 columns — date | ref | £ | amount | Confirmed |
+// Invoiced | Paid | received-date | delete. Every row (invoice, each expense,
+// the footer) places into the same tracks. NB the auto-flow contract: the
+// invoice row and each invExpCells call MUST each emit exactly nine cells
+// (the paidDate slot renders an empty <span> when unpaid; the expense filler
+// spans columns 5–8) — an extra or missing cell shifts every row after it.
+function invRowHtml(i,pi,v){
+  const xs=v.expenses||[],xt=invExpSum(v);
+  return `<div style="background:#fff;padding:6px 10px;border:1px solid var(--mid);opacity:${v.confirmed?'1':'.55'};display:grid;grid-template-columns:132px minmax(90px,1fr) auto 90px auto auto auto auto auto;gap:5px 8px;align-items:center">
+    <input type="date" value="${v.date||''}" style="font-size:11px;width:100%;box-sizing:border-box" title="Invoice date — past = issued, future = planned" onchange="updInvoice(${i},${pi},'${jsq(v.id)}','date',this.value)"/>
+    <input type="text" value="${escAttr(v.ref||'')}" placeholder="ref / description" style="width:100%;box-sizing:border-box;min-width:0;font-size:11px" onchange="updInvoice(${i},${pi},'${jsq(v.id)}','ref',this.value)"/>
+    <span style="font-size:11px;color:var(--dkgrey);font-weight:600">£</span>
+    <input type="number" step="0.01" min="0" value="${v.amount||''}" placeholder="0" style="width:100%;box-sizing:border-box;font-size:11px" onchange="updInvoice(${i},${pi},'${jsq(v.id)}','amount',this.value)"/>
     <label style="display:flex;align-items:center;gap:4px;font-size:10px;letter-spacing:.04em;text-transform:uppercase;font-weight:600;color:${v.confirmed?'var(--blk)':'var(--grey)'};cursor:pointer" title="${v.invoiced?'An issued invoice is always confirmed':'Untick for installments that may never materialise — they are excluded from the totals'}"><input type="checkbox" ${v.confirmed?'checked':''} ${v.invoiced?'disabled':''} onchange="updInvoice(${i},${pi},'${jsq(v.id)}','confirmed',this.checked)"/>Confirmed</label>
     <label style="display:flex;align-items:center;gap:4px;font-size:10px;letter-spacing:.04em;text-transform:uppercase;font-weight:600;color:${v.invoiced?'var(--accent)':'var(--dkgrey)'};cursor:pointer" title="${v.paid?'A paid invoice stays issued — untick Paid first':'Ticked = issued through Xero (confirms it automatically)'}"><input type="checkbox" ${v.invoiced?'checked':''} ${v.paid?'disabled':''} onchange="updInvoice(${i},${pi},'${jsq(v.id)}','invoiced',this.checked)"/>Invoiced</label>
     <label style="display:flex;align-items:center;gap:4px;font-size:10px;letter-spacing:.04em;text-transform:uppercase;font-weight:600;color:${v.paid?'#B04A3F':'var(--dkgrey)'};cursor:pointer" title="Payment has landed in the bank — records the received date"><input type="checkbox" ${v.paid?'checked':''} onchange="updInvoice(${i},${pi},'${jsq(v.id)}','paid',this.checked)"/>Paid</label>
-    ${v.paid?`<input type="date" value="${v.paidDate||''}" style="font-size:11px;width:124px" title="Date the payment was received" onchange="updInvoice(${i},${pi},'${jsq(v.id)}','paidDate',this.value)"/>`:''}
-    <span style="cursor:pointer;color:var(--danger);font-size:16px;font-weight:600;padding:0 2px" onclick="delInvoice(${i},${pi},'${jsq(v.id)}')" title="Delete invoice">×</span>
+    ${v.paid?`<input type="date" value="${v.paidDate||''}" style="font-size:11px;width:124px" title="Date the payment was received" onchange="updInvoice(${i},${pi},'${jsq(v.id)}','paidDate',this.value)"/>`:'<span></span>'}
+    <span style="cursor:pointer;color:var(--danger);font-size:16px;font-weight:600;justify-self:center" onclick="delInvoice(${i},${pi},'${jsq(v.id)}')" title="Delete invoice">×</span>
+    ${xs.map(x=>invExpCells(i,pi,v.id,x)).join('')}
+    <div style="grid-column:1/-1;display:flex;align-items:center;gap:10px;padding-top:1px">
+      <button class="btn btn-sm" style="font-size:10px;padding:2px 9px" onclick="addInvExp(${i},${pi},'${jsq(v.id)}')" title="A cost incurred on the client's behalf (e.g. an OS map), billed on this invoice on top of the fee — counts in the cash figures, never against the stage fee">+ Expense</button>
+      ${xt>0.005?`<span style="font-size:10px;color:var(--dkgrey)">expenses ${gbpInv(xt)} · invoice total <b>${gbpInv(invAmt(v))}</b></span>`:''}
+    </div>
   </div>`;
 }
 function invTotalsStrip(s,fee,scope){
@@ -2577,6 +2618,7 @@ function invTotalsStrip(s,fee,scope){
     <div class="inv-stat"><div class="lbl">Total invoices (confirmed)</div><div class="val" style="color:${mm?'var(--warn)':'var(--ok)'}">${gbpInv(s.conf)}</div><div class="sub" style="color:${mm?'var(--warn)':'var(--ok)'}">${fee?(mm?`⚠ ${scope} fee is ${gbpInv(fee)}`:'matches the fee'):(s.conf>0.005?'⚠ no fee set':'')}</div></div>
     <div class="inv-stat"><div class="lbl">Invoiced to date</div><div class="val" style="color:var(--blk)">${gbpInv(s.inv)}</div><div class="sub" style="color:var(--dkgrey)">${s.conf-s.inv>0.005?gbpInv(s.conf-s.inv)+' still to invoice':''}</div></div>
     <div class="inv-stat"><div class="lbl">Paid</div><div class="val" style="color:#B04A3F">${gbpInv(s.paid)}</div><div class="sub" style="color:var(--dkgrey)">${s.inv-s.paid>0.005?gbpInv(s.inv-s.paid)+' invoiced, awaiting payment':''}</div></div>
+    ${s.exp>0.005?`<div class="inv-stat"><div class="lbl">Client expenses</div><div class="val" style="color:var(--blk)">${gbpInv(s.exp)}</div><div class="sub" style="color:var(--dkgrey)">${gbpInv(s.expInv)} billed · ${gbpInv(s.expPaid)} paid — on top of the fee</div></div>`:''}
     ${s.all>s.conf+0.005?`<div class="inv-stat"><div class="lbl">Unconfirmed (excluded)</div><div class="val" style="color:var(--grey)">${gbpInv(s.all-s.conf)}</div><div class="sub" style="color:var(--grey)">not counted in the totals</div></div>`:''}
   </div>`;
 }
@@ -2608,9 +2650,92 @@ function invPanel(i){
       <div style="font-size:10px;letter-spacing:.07em;text-transform:uppercase;color:var(--dkgrey);font-weight:700;margin-bottom:6px">Project total — all stages</div>
       ${invTotalsStrip(g,fee,'project')}
     </div>`:'';
-  return `<p style="font-size:11px;color:var(--dkgrey);margin:0 0 10px;line-height:1.5">Track the invoices for ${total?'the project':'each stage'}. Xero still creates and issues them — this is the record. Future dates are planned invoices (for cashflow). <b>Confirmed</b> installments count toward the totals; untick it for fees that may never materialise. <b>Invoiced</b> means it has gone out through Xero — ticking it confirms the fee automatically. <b>Paid</b> records the money landing in the bank (the received date is kept) — the Income page colours cells cyan while an invoice is awaiting payment and salmon once it's paid.</p>
+  return `${pInvSums(p.name).n?`<div style="display:flex;justify-content:flex-end;margin:0 0 8px"><button class="btn btn-sm" onclick="exportFeeSchedule(${i})" title="A branded, client-ready schedule of this project's invoices and expenses, dated today — opens the print dialog; choose 'Save as PDF'">Export fee schedule</button></div>`:''}<p style="font-size:11px;color:var(--dkgrey);margin:0 0 10px;line-height:1.5">Track the invoices for ${total?'the project':'each stage'}. Xero still creates and issues them — this is the record. Future dates are planned invoices (for cashflow). <b>Confirmed</b> installments count toward the totals; untick it for fees that may never materialise. <b>Invoiced</b> means it has gone out through Xero — ticking it confirms the fee automatically. <b>Paid</b> records the money landing in the bank (the received date is kept) — the Income page colours cells cyan while an invoice is awaiting payment and salmon once it's paid. <b>+ expense</b> on an invoice records a cost incurred on the client's behalf (e.g. an OS map) — billed on top of the fee, it counts in the cash figures but never against the stage fee.</p>
       ${blocks}
       ${grand}`;
+}
+// ── Fee schedule export (Joe, 13 Aug): a branded, client-facing schedule of a
+// project's invoices — dates, refs/notes, amounts, expenses, paid status —
+// prepared under today's date. Rendered into a hidden iframe carrying the
+// embedded LOGO and the app's own @font-face (pulled from the live stylesheet
+// at run time, so the 16KB font isn't duplicated in code), then printed:
+// the browser's "Save as PDF" is the export. Builder is pure for testability.
+function feeScheduleHTML(i){
+  const p=st.projects[i];if(!p)return'';
+  const total=p.feeMode==='total';
+  const client=st.clients.find(c=>c.id===p.clientId);
+  const today=fmtLong(new Date());
+  const statusOf=v=>v.paid?`Paid${v.paidDate?' · received '+fmt(parseISO(v.paidDate)):''}`:v.invoiced?'Invoiced — awaiting payment':v.confirmed?'Planned':'Possible — not yet confirmed';
+  let ff='';try{for(const sh of document.styleSheets){for(const r of (sh.cssRules||[])){if(r.constructor&&r.constructor.name==='CSSFontFaceRule'){ff=r.cssText;break;}}if(ff)break;}}catch(e){}
+  const secs=total?[{label:'Whole project',fee:parseFloat(p.totalFee)||0,list:p.invoices||[]}]
+    :(p.phases||[]).filter(ph=>(ph.invoices&&ph.invoices.length)||ph.fee).map(ph=>({label:ph.name,fee:parseFloat(ph.fee)||0,list:ph.invoices||[]}));
+  const row=v=>{const xs=v.expenses||[];return `<tr>
+      <td>${v.date?fmt(parseISO(v.date)):'—'}</td>
+      <td>${escAttr(v.ref||'')}${xs.map(x=>`<div class="fs-exp">+ ${escAttr(x.desc||'expense')}${x.date?` — ${fmt(parseISO(x.date))}`:''}</div>`).join('')}</td>
+      <td class="r">${gbpInv(parseFloat(v.amount)||0)}${xs.map(x=>`<div class="fs-exp">${gbpInv(parseFloat(x.amount)||0)}</div>`).join('')}</td>
+      <td class="r"><b>${gbpInv(invAmt(v))}</b></td>
+      <td>${statusOf(v)}</td></tr>`;};
+  let body='';
+  const g={fee:0,inv:0,paid:0,exp:0};
+  for(const sec of secs){
+    const list=[...sec.list].sort((a,c)=>(a.date||'9999')<(c.date||'9999')?-1:1);
+    const su=invSums(sec.list);
+    g.fee+=sec.fee;g.inv+=su.inv+su.expInv;g.paid+=su.paid+su.expPaid;g.exp+=su.exp;
+    body+=`<h2><span>${escAttr(sec.label)}</span>${sec.fee?`<span class="fs-fee">fee ${gbpInv(sec.fee)}</span>`:''}</h2>`;
+    body+=list.length?`<table><thead><tr><th>Date</th><th>Description</th><th class="r">Amount</th><th class="r">Total</th><th>Status</th></tr></thead><tbody>${list.map(row).join('')}</tbody></table>`
+      :`<div class="fs-none">No invoices recorded.</div>`;
+  }
+  return `<!doctype html><html><head><meta charset="utf-8"><title>Fee schedule — ${escAttr((p.code?p.code+' ':'')+p.name)} — ${escAttr(today)}</title>
+  <style>${ff}
+  body{font-family:'Figtree',Arial,sans-serif;color:#26221E;margin:34px 40px;font-size:12px;line-height:1.5}
+  .hd{border-bottom:2px solid #26221E;padding-bottom:16px;margin-bottom:4px}
+  .hd img{height:64px;display:block;margin-bottom:14px}
+  h1{font-size:24px;font-weight:700;margin:0 0 6px;letter-spacing:-.01em}
+  .proj{font-size:15px;font-weight:600;color:#26221E;margin-bottom:3px}
+  .prep{font-size:12px;color:#55504A}
+  .sub{font-size:11px;color:#55504A}
+  h2{font-size:13px;font-weight:700;margin:20px 0 6px;display:flex;justify-content:space-between;border-bottom:1px solid #C9C3BA;padding-bottom:3px}
+  .fs-fee{font-weight:600;color:#55504A;font-size:11px}
+  table{width:100%;border-collapse:collapse}
+  th{font-size:9.5px;letter-spacing:.07em;text-transform:uppercase;color:#55504A;text-align:left;padding:4px 8px;border-bottom:1px solid #C9C3BA}
+  td{padding:5px 8px;border-bottom:1px solid #EDEAE4;vertical-align:top}
+  .r{text-align:right}
+  .fs-exp{font-size:10.5px;color:#55504A}
+  .fs-none{font-size:11px;color:#857F76;font-style:italic;margin:4px 0 10px}
+  .tot{margin-top:18px;border-top:2px solid #26221E;padding-top:10px;display:flex;gap:34px;flex-wrap:wrap}
+  .tot div{font-size:11px;color:#55504A}.tot b{display:block;font-size:15px;color:#26221E}
+  .ft{margin-top:26px;font-size:9.5px;color:#857F76}
+  @media print{body{margin:14mm 16mm}}
+  </style></head><body>
+  <div class="hd"><img src="${LOGO}" alt="amn architects"/>
+    <h1>Fee schedule</h1>
+    <div class="proj">${escAttr((p.code?p.code+' — ':'')+p.name)}${client?` · ${escAttr(client.company)}`:''}</div>
+    <div class="prep">Prepared <b>${escAttr(today)}</b> · amounts net of VAT</div></div>
+  ${body}
+  <div class="tot">
+    <div>Total fee<b>${gbpInv(g.fee)}</b></div>
+    <div>Invoiced to date${g.exp>0.005?' (inc. expenses)':''}<b>${gbpInv(g.inv)}</b></div>
+    <div>Paid<b>${gbpInv(g.paid)}</b></div>
+    <div>Outstanding<b>${gbpInv(g.inv-g.paid)}</b></div>
+    ${g.exp>0.005?`<div>Client expenses<b>${gbpInv(g.exp)}</b></div>`:''}
+  </div>
+  <div class="ft">A M Nicholson Limited — prepared from the amn practice portal. Planned installments are indicative and subject to appointment.</div>
+  </body></html>`;
+}
+window.exportFeeSchedule=function(i){
+  if(!isAdmin())return;
+  const html=feeScheduleHTML(i);if(!html)return;
+  try{
+    const f=document.createElement('iframe');
+    f.style.cssText='position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden';
+    document.body.appendChild(f);
+    f.srcdoc=html;
+    f.onload=function(){setTimeout(function(){
+      try{f.contentWindow.focus();f.contentWindow.print();}
+      catch(e){undoToast('Printing is blocked in this preview — use the deployed portal to export.');}
+      setTimeout(function(){try{f.remove();}catch(e){}},4000);
+    },300);};
+  }catch(e){undoToast('Could not open the print dialog in this environment.');}
 }
 function pSpent(pn){return(st.projects.find(p=>p.name===pn)?.phases||[]).reduce((s,ph)=>s+feeSpent(pn,ph.name),0);}
 function pSpentCost(pn){return(st.projects.find(p=>p.name===pn)?.phases||[]).reduce((s,ph)=>s+feeSpentCost(pn,ph.name),0);}
@@ -2716,6 +2841,12 @@ function planStickyHead(){
   }catch(e){}
 }
 window.addEventListener('scroll',planStickyHead,{passive:true});
+// Text selections routinely start inside a modal and release over the backdrop;
+// the browser then fires the click on the BACKDROP and the modal closed, losing
+// typed CRM notes (Joe, 13 Aug). Record where every press STARTS — an overlay
+// only closes when both the press and the release land on the backdrop itself.
+window._ovMd=null;
+try{document.addEventListener('mousedown',function(e){window._ovMd=e.target;},true);}catch(e){}
 if(typeof window.matchMedia==='function'){try{const _mq=window.matchMedia('(max-width:640px)');(_mq.addEventListener?_mq.addEventListener('change',()=>render()):_mq.addListener&&_mq.addListener(()=>render()));}catch(e){}}
 // NB: reading navigator.serviceWorker THROWS SecurityError inside an iframe
 // sandboxed without allow-same-origin (preview panes). The whole probe must
@@ -2847,6 +2978,11 @@ function buildLogin(){
 // projects, and the open cell popover {i,pi,ym,x,y}.
 let incOff=0,incPop=null,incChartOpen=false;const incExpanded=new Set();
 let incSort={by:'code',dir:1},incDrag=null,incDragDone=false,incLikPick=null,incSel=null;
+// Display-only table filters (Joe, 13 Aug): typed search + Hide dormant. They
+// filter the PROJECT ROWS ONLY — the scenario totals, the Invoiced/VAT actuals
+// row, the chart and the headline stats always cover the whole practice, so
+// hiding rows can never change a number used for cashflow or VAT.
+let incQ='',incHideDorm=false;
 
 function buildLog(){
   const viewMode=!!viewingUser;
@@ -3508,7 +3644,7 @@ function renderPlaceholderPopover(){
   const el=document.getElementById('plan-ph-popover-container');if(!el)return;
   if(!planPhPopoverState){el.innerHTML='';return;}
   const{id,name,role,billable,cost,weeklyHours}=planPhPopoverState;
-  el.innerHTML=`<div class="modal-overlay" id="plan-ph-overlay" onclick="if(event.target.id==='plan-ph-overlay')closePlaceholderPopover()">
+  el.innerHTML=`<div class="modal-overlay" id="plan-ph-overlay" onclick="if(event.target.id==='plan-ph-overlay'&&window._ovMd===event.target)closePlaceholderPopover()">
     <div class="modal-box">
       <div class="note-popover-hdr"><span>${id?'Edit placeholder':'Add placeholder'}</span><button onclick="closePlaceholderPopover()" style="background:none;border:none;cursor:pointer;font-size:14px;font-weight:700;color:var(--dkgrey)">×</button></div>
       <div style="padding:14px">
@@ -4945,8 +5081,18 @@ function incLines(){
   return blocks;
 }
 window.incSortBy=function(by){if(incSort.by===by)incSort.dir=-incSort.dir;else incSort={by,dir:1};render();}
+window.incSearch=function(el){const v=el.value,pos=el.selectionStart;incQ=v;render();const e2=document.getElementById('inc-search');if(e2){e2.focus();try{e2.setSelectionRange(pos,pos);}catch(_){}}}
+window.incTogDorm=function(){incHideDorm=!incHideDorm;render();}
+// A block matches on project code, name, client, or any stage-line label.
+function incBlockMatch(b,q){
+  if(!q)return true;
+  if((b.p.code||'').toLowerCase().includes(q))return true;
+  if(b.p.name.toLowerCase().includes(q))return true;
+  if((b.client||'').toLowerCase().includes(q))return true;
+  return b.lines.some(l=>String(l.label||'').toLowerCase().includes(q));
+}
 function incCell(list,ym){let conf=0,unconf=0,inv=0,paid=0,all=0,n=0;
-  for(const v of list||[]){if((v.date||'').slice(0,7)!==ym)continue;n++;const a=parseFloat(v.amount)||0;all+=a;if(v.confirmed)conf+=a;else unconf+=a;if(v.invoiced)inv+=a;if(v.paid)paid+=a;}
+  for(const v of list||[]){if((v.date||'').slice(0,7)!==ym)continue;n++;const a=invAmt(v);all+=a;if(v.confirmed)conf+=a;else unconf+=a;if(v.invoiced)inv+=a;if(v.paid)paid+=a;}
   return{conf,unconf,inv,paid,all,n};}
 // Cell colour: cyan while any invoice awaits payment, salmon when the month's
 // invoices are all paid, plain for planned, grey italic for unconfirmed-only.
@@ -4963,7 +5109,7 @@ function incMonthTotals(blocks,ym){let conf=0,prob=0,max=0,inv=0,paid=0;
   for(const b of blocks)for(const l of b.lines){const c=incCell(l.list,ym);max+=c.all;prob+=c.conf*l.lik/100;if(l.lik===100)conf+=c.conf;inv+=c.inv;paid+=c.paid;}
   return{conf,prob,max,inv,paid};}
 function incQuarterInvoiced(blocks,y,q){let t=0;
-  for(const b of blocks)for(const l of b.lines)for(const v of l.list){if(!v.invoiced)continue;const d=v.date||'';if(+d.slice(0,4)===y&&Math.ceil(+d.slice(5,7)/3)===q)t+=parseFloat(v.amount)||0;}
+  for(const b of blocks)for(const l of b.lines)for(const v of l.list){if(!v.invoiced)continue;const d=v.date||'';if(+d.slice(0,4)===y&&Math.ceil(+d.slice(5,7)/3)===q)t+=invAmt(v);}
   return t;}
 // AMN's financial year is assumed to start 1 APRIL (the UK default) — CONFIRM
 // with Joe; if different this constant is the only change needed.
@@ -4973,7 +5119,7 @@ function fyLabel(startY){return'FY '+startY+'/'+String(startY+1).slice(2);}
 function fyNowStart(){return fyOf(ymNow())+'-'+String(FY_START_MONTH).padStart(2,'0');}
 // Sum a line's installments over an inclusive YYYY-MM range (YtD / FY columns).
 function incRangeCell(list,from,to){let conf=0,all=0;
-  for(const v of list||[]){const ym=(v.date||'').slice(0,7);if(!ym||ym<from||ym>to)continue;const a=parseFloat(v.amount)||0;all+=a;if(v.confirmed)conf+=a;}
+  for(const v of list||[]){const ym=(v.date||'').slice(0,7);if(!ym||ym<from||ym>to)continue;const a=invAmt(v);all+=a;if(v.confirmed)conf+=a;}
   return{conf,all};}
 function incRangeTotals(blocks,from,to){let conf=0,prob=0,max=0;
   for(const b of blocks)for(const l of b.lines){const c=incRangeCell(l.list,from,to);max+=c.all;prob+=c.conf*l.lik/100;if(l.lik===100)conf+=c.conf;}
@@ -5029,6 +5175,8 @@ function daysInYm(ym){const[y,m]=ym.split('-').map(Number);return new Date(y,m,0
 // Copies land as PLANNED (never invoiced/paid — you can't repeat an issued
 // invoice), keep amount/note/confirmed, clamp the day to shorter months, and
 // only fill EMPTY months — existing installments are never overwritten.
+// Client expenses belong to the actual invoice they were billed on and are
+// deliberately NOT copied onto repeats (copies are plain fee installments).
 window.incRepeat=function(i,pi,fromYm,toYm){
   if(!isAdmin())return 0;
   const list=invListFor(st.projects[i],pi);if(!list)return 0;
@@ -5126,6 +5274,11 @@ function incPopRow(i,pi,v){
       <label style="display:flex;align-items:center;gap:4px;font-size:10px;letter-spacing:.04em;text-transform:uppercase;font-weight:600;color:${v.paid?'#B04A3F':'var(--dkgrey)'};cursor:pointer"><input type="checkbox" ${v.paid?'checked':''} onchange="updInvoice(${i},${pi},'${jsq(v.id)}','paid',this.checked)"/>Paid</label>
       ${v.paid?`<input type="date" value="${v.paidDate||''}" style="font-size:11px;width:122px" title="Date the payment was received" onchange="updInvoice(${i},${pi},'${jsq(v.id)}','paidDate',this.value)"/>`:''}
     </div>
+    ${(v.expenses||[]).map(x=>invExpRowHtml(i,pi,v.id,x)).join('')}
+    <div style="display:flex;align-items:center;gap:10px;padding:2px 0 0 2px">
+      <button class="btn btn-sm" style="font-size:10px;padding:2px 9px" onclick="addInvExp(${i},${pi},'${jsq(v.id)}')" title="A cost incurred on the client's behalf, billed on this invoice on top of the fee">+ Expense</button>
+      ${invExpSum(v)>0.005?`<span style="font-size:10px;color:var(--dkgrey)">expenses ${gbpInv(invExpSum(v))} · total <b>${gbpInv(invAmt(v))}</b></span>`:''}
+    </div>
   </div>`;
 }
 function renderIncPopover(){
@@ -5161,10 +5314,15 @@ window.incExportCSV=function(){
 function buildIncome(){
   if(!isAdmin())return'';
   const months=incMonths(),blocks=incLines(),now=ymNow();
+  // Row filters (see incQ/incHideDorm above). "Dormant" = every line at 0%,
+  // which by definition contributes nothing to Confirmed or Probable anyway.
+  const _incq=incQ.trim().toLowerCase();
+  const shown=blocks.filter(b=>(!incHideDorm||b.sortLik>0)&&incBlockMatch(b,_incq));
+  const incFiltered=shown.length!==blocks.length;
   const paidFyStart=fyNowStart(),paidFyEnd=ymAdd(paidFyStart,11),paidFyLab=fyLabel(fyOf(now));
   // Practice-wide roll-ups across ALL installments (not just the window)
   let outAmt=0,paidFy=0,conf12=0;
-  for(const b of blocks)for(const l of b.lines)for(const v of l.list){const a=parseFloat(v.amount)||0;
+  for(const b of blocks)for(const l of b.lines)for(const v of l.list){const a=invAmt(v);
     if(v.invoiced&&!v.paid)outAmt+=a;
     if(v.paid){const pym=(v.paidDate||v.date||'').slice(0,7);if(pym>=paidFyStart&&pym<=paidFyEnd)paidFy+=a;}
     const ym=(v.date||'').slice(0,7);
@@ -5181,6 +5339,9 @@ function buildIncome(){
     <button class="btn btn-sm" onclick="incToday()" ${incOff?'':'disabled'}>Today</button>
     <button class="btn btn-sm" onclick="incNav(3)" title="Forward three months">›</button>
     <span style="font-size:11px;color:var(--dkgrey)">${ymLabel(months[0])} – ${ymLabel(months[months.length-1])} · net of VAT</span>
+    <input id="inc-search" type="text" placeholder="Search project / client / stage…" value="${escAttr(incQ)}" oninput="incSearch(this)" autocomplete="off" style="font-size:11px;width:200px;box-sizing:border-box"/>
+    <button class="btn btn-sm" onclick="incTogDorm()" title="${incHideDorm?'Dormant projects are hidden — click to show them':'Hide projects whose every line is dormant (0%). Totals, chart and headline stats still cover everything.'}" style="${incHideDorm?'background:var(--blk);color:#fff;border-color:var(--blk)':''}">Hide dormant${incHideDorm?' ✓':''}</button>
+    ${incFiltered?`<span style="font-size:10px;color:var(--warn);font-weight:600" title="The Confirmed / Probable / Max rows, the VAT actuals row, the chart and the stats above are always practice-wide — row filters never change them">showing ${shown.length} of ${blocks.length} — totals & chart cover all projects</span>`:''}
     <span style="font-size:10px;color:var(--grey);margin-left:auto;display:flex;align-items:center;gap:11px;flex-wrap:wrap">
       ${PROJ_TEMPS.map(t=>`<span style="display:inline-flex;align-items:center;gap:4px" title="${escAttr(t.label)}"><span class="temp-dot" style="width:12px;height:12px;background:${t.c};display:inline-block"></span>${likShort(LIK_BY_COLOR[t.c])}</span>`).join('')}
       <span style="color:var(--mid)">|</span>
@@ -5204,7 +5365,7 @@ function buildIncome(){
       <tr><th colspan="5" style="background:var(--wht)"></th>${qGroups.map((g,gi)=>`<th colspan="${g.n}" class="${(g.y*4+g.q)%2?'inc-q0':'inc-q1'} inc-qdiv${gi===0?' inc-mfirst':''}" style="text-align:center;font-size:9px;letter-spacing:.06em">VAT Qtr ${g.q} · ${g.y}</th>`).join('')}</tr>
       <tr><th class="sortable" style="min-width:56px" onclick="incSortBy('code')" title="Sort by project number">#${incSort.by==='code'?(incSort.dir>0?' ▲':' ▼'):''}</th><th class="sortable" style="min-width:140px" onclick="incSortBy('name')" title="Sort by project name">Project${incSort.by==='name'?(incSort.dir>0?' ▲':' ▼'):''}</th><th class="sortable" style="min-width:95px" onclick="incSortBy('client')" title="Sort by client">Client${incSort.by==='client'?(incSort.dir>0?' ▲':' ▼'):''}</th><th style="min-width:105px">Stage</th><th class="sortable" style="min-width:34px;text-align:center" onclick="incSortBy('lik')" title="Likelihood — sort by probability (a project's most likely line)">%${incSort.by==='lik'?(incSort.dir>0?' ▲':' ▼'):''}</th>${months.map((ym,mi)=>`<th class="${ym===now?'inc-nowcol':''}${mDiv(ym)}${mi===0?' inc-mfirst':''}" style="text-align:right;min-width:66px">${ymLabel(ym)}</th>`).join('')}<th class="inc-totcol" style="text-align:right" title="This financial year to date (${fyLab}, from ${ymLabel(fyStart)} to ${ymLabel(now)} inclusive)">YtD</th><th class="inc-totcol2" style="text-align:right" title="The whole financial year (${ymLabel(fyStart)} – ${ymLabel(fyEnd)})">${fyLab}</th></tr>
     </thead><tbody>`;
-  for(const b of blocks){
+  for(const b of shown){
     const defaultOpen=b.total||b.n>0;
     const collapsed=!b.total&&(incExpanded.has(b.p.name)?defaultOpen:!defaultOpen);
     if(collapsed&&b.n===0){
@@ -5244,7 +5405,7 @@ function buildIncome(){
       h+=months.map((ym,mi)=>{const c=incCell(l.list,ym);const cls=incCellCls(c);
         const items=(l.list||[]).filter(v=>(v.date||'').slice(0,7)===ym);
         const noted=items.some(v=>v.ref);
-        const tip=items.length?items.map(v=>`${v.date} · ${gbpInv(parseFloat(v.amount)||0)}${v.ref?' · '+v.ref:''}`).join('  |  ')+' — click to edit, drag to repeat':'Click to add an installment';
+        const tip=items.length?items.map(v=>`${v.date} · ${gbpInv(invAmt(v))}${v.ref?' · '+v.ref:''}`).join('  |  ')+' — click to edit, drag to repeat':'Click to add an installment';
         const selOn=incSel&&incSel.i===b.i&&incSel.pi===l.pi&&ym>=(incSel.from<incSel.to?incSel.from:incSel.to)&&ym<=(incSel.from<incSel.to?incSel.to:incSel.from);
         return `<td class="inc-cell ${cls}${noted?' inc-noted':''}${selOn?' inc-sel':''}${ym===now?' inc-nowcol':''}${mDiv(ym)}${mi===0?' inc-mfirst':''}" data-line="${b.i}:${l.pi}" data-ym="${ym}" onmousedown="incCellDown(event,${b.i},${l.pi},'${ym}')" onmouseenter="incCellEnter(${b.i},${l.pi},'${ym}')" onclick="incOpenPop(event,${b.i},${l.pi},'${ym}')" title="${escAttr(tip)}">${c.n?gbpInv(c.all):'<span class="inc-zero">—</span>'}</td>`;}).join('');
       const rMain=incRangeCell(l.list,fyStart,now),rFy=incRangeCell(l.list,fyStart,fyEnd);
@@ -5261,6 +5422,7 @@ function buildIncome(){
       }
     });
   }
+  if(!shown.length)h+=`<tr><td colspan="${5+months.length}" style="padding:16px 14px;font-size:12px;color:var(--grey);font-style:italic">Nothing matches${_incq?` \u201c${escAttr(incQ.trim())}\u201d`:''}${incHideDorm?' with dormant projects hidden':''}.</td><td class="inc-tothead" colspan="2"></td></tr>`;
   // Order (Joe, 28 Jul): project rows → chart band (minimisable, collapsed by
   // default — mostly people review the figures) → the three scenario totals →
   // a visibly different Invoiced/VAT-quarter actuals row. The chart lives in a
@@ -6074,7 +6236,7 @@ function renderCpdModal(){
   const L=(t)=>`<label style="font-size:10px;letter-spacing:.07em;text-transform:uppercase;color:var(--dkgrey);font-weight:600;display:block;margin-bottom:4px">${t}</label>`;
   const chkGrid=(cls,list,vals,cols)=>`<div style="display:grid;grid-template-columns:repeat(${cols},1fr);gap:7px 16px;border:1px solid var(--mid);border-radius:var(--r-lg);padding:12px 14px;background:var(--off)">${list.map(c=>`<label style="display:flex;gap:7px;align-items:flex-start;font-size:11.5px;font-weight:400;text-transform:none;letter-spacing:0;line-height:1.35;cursor:pointer"><input type="checkbox" class="${cls}" value="${escAttr(c)}" ${vals.includes(c)?'checked':''} ${dis} style="margin-top:1px"/>${escAttr(c)}</label>`).join('')}</div>`;
   const qBox=(id,label,val,ph,alwaysOn)=>`<div style="margin-bottom:14px">${L(label)}<textarea id="${id}" rows="2" style="width:100%;font-size:12px;line-height:1.6;font-family:'Figtree',sans-serif;resize:vertical;box-sizing:border-box" placeholder="${ph}" ${alwaysOn?'':dis}>${escAttr(val||'')}</textarea></div>`;
-  el.innerHTML=`<div class="modal-overlay" onclick="if(event.target===this)cpdCancel()">
+  el.innerHTML=`<div class="modal-overlay" onclick="if(event.target===this&&window._ovMd===this)cpdCancel()">
     <div class="modal-box" onclick="event.stopPropagation()" style="max-width:840px;width:94vw;max-height:92vh;overflow-y:auto;padding:0">
       <div class="note-popover-hdr" style="position:sticky;top:0;background:#fff;z-index:2"><span>${isNew?'New CPD entry':`${canEditEntry?'Edit CPD entry':'CPD entry'}${e.ref?` — ${escAttr(e.ref)}`:''}`}</span><button onclick="cpdCancel()" style="background:none;border:none;cursor:pointer;font-size:14px;font-weight:700;color:var(--dkgrey)">×</button></div>
       <div style="padding:18px 20px">
@@ -7032,6 +7194,9 @@ window.updInvoice=function(i,pi,id,field,val){if(!isAdmin())return;const list=in
   else if(field==='paidDate')v.paidDate=val||'';
   save();render();}
 window.delInvoice=function(i,pi,id){if(!isAdmin())return;const list=invListFor(st.projects[i],pi);if(!list)return;const idx=list.findIndex(x=>x.id===id);if(idx<0)return;list.splice(idx,1);save();render();}
+window.addInvExp=function(i,pi,id){if(!isAdmin())return;const list=invListFor(st.projects[i],pi);const v=list&&list.find(x=>x.id===id);if(!v)return;if(!Array.isArray(v.expenses))v.expenses=[];v.expenses.push({id:crmId('ix'),desc:'',amount:0,date:''});save();render();}
+window.updInvExp=function(i,pi,id,xid,field,val){if(!isAdmin())return;const list=invListFor(st.projects[i],pi);const v=list&&list.find(x=>x.id===id);const x=v&&(v.expenses||[]).find(y=>y.id===xid);if(!x)return;if(field==='amount')x.amount=parseFloat(val)||0;else if(field==='desc')x.desc=val||'';else if(field==='date')x.date=val||'';save();render();}
+window.delInvExp=function(i,pi,id,xid){if(!isAdmin())return;const list=invListFor(st.projects[i],pi);const v=list&&list.find(x=>x.id===id);if(!v)return;v.expenses=(v.expenses||[]).filter(y=>y.id!==xid);save();render();}
 window.updPhFee=function(i,pi,v){st.projects[i].phases[pi].fee=parseFloat(v)||null;save();}
 window.addCl=function(){const company=document.getElementById('nc-co').value.trim(),contact=document.getElementById('nc-ct').value.trim(),email=document.getElementById('nc-em').value.trim(),phone=document.getElementById('nc-ph').value.trim();if(!company)return;st.clients.push({id:`c-${Date.now()}`,company,contact,email,phone});save();render();}
 let _addClientPrefix=null;
@@ -7042,7 +7207,7 @@ function renderAddClientModal(){
   if(!_addClientPrefix){if(el)el.innerHTML='';return;}
   let root=el;
   if(!root){root=document.createElement('div');root.id='add-client-modal-root';document.body.appendChild(root);}
-  root.innerHTML=`<div class="modal-overlay" onclick="if(event.target===this)closeAddClientModal()">
+  root.innerHTML=`<div class="modal-overlay" onclick="if(event.target===this&&window._ovMd===this)closeAddClientModal()">
     <div style="background:#fff;border-radius:var(--r-lg);max-width:680px;width:95%;max-height:90vh;overflow:auto;margin:40px auto;box-shadow:0 12px 40px rgba(38,34,30,.18)">
       <div style="position:sticky;top:0;background:#fff;z-index:2;display:flex;justify-content:space-between;align-items:center;padding:15px 22px;border-bottom:1px solid var(--mid)">
         <span style="font-size:16px;font-weight:700;color:var(--blk)">Add Client</span>
@@ -7272,7 +7437,7 @@ function renderRateModal(){
   const intro=s.scope==='override'
     ?`A custom rate overrides ${person}'s standard rate on <b>this project only</b>, from the date you set. Leave empty to use their standard rate.`
     :`Each rate applies from its date until the next one. Adding a new dated rate never alters earlier history. Editing or removing an existing rate <b>does</b> re-value the hours it covered — you'll be warned first; use it only to correct mistakes.`;
-  el.innerHTML=`<div class="modal-overlay" onclick="if(event.target===this)closeRateModal()">
+  el.innerHTML=`<div class="modal-overlay" onclick="if(event.target===this&&window._ovMd===this)closeRateModal()">
     <div class="modal-box" onclick="event.stopPropagation()" style="max-width:440px">
       <div class="note-popover-hdr"><span>${escAttr(title)}</span><button onclick="closeRateModal()" style="background:none;border:none;cursor:pointer;font-size:14px;font-weight:700;color:var(--dkgrey)">×</button></div>
       <div style="padding:16px">
@@ -7307,7 +7472,7 @@ window.closeTeamAdd=function(){teamAddOpen=false;render();}
 function renderTeamAddModal(){
   const el=document.getElementById('team-add-container');if(!el)return;
   if(!teamAddOpen||!isAdmin()){el.innerHTML='';return;}
-  el.innerHTML=`<div class="modal-overlay" onclick="if(event.target===this)closeTeamAdd()">
+  el.innerHTML=`<div class="modal-overlay" onclick="if(event.target===this&&window._ovMd===this)closeTeamAdd()">
     <div class="modal-box" style="width:440px" onclick="event.stopPropagation()">
       <div class="note-popover-hdr"><span>Add team member</span><button onclick="closeTeamAdd()" style="background:none;border:none;cursor:pointer;font-size:14px;font-weight:700;color:var(--dkgrey)">×</button></div>
       <div style="padding:18px 20px">
@@ -7329,7 +7494,7 @@ function renderConfirmModal(){
   const el=document.getElementById('confirm-modal-container');if(!el)return;
   if(!confirmModalState){el.innerHTML='';return;}
   const{title,message,confirmWord}=confirmModalState;
-  el.innerHTML=`<div class="modal-overlay" style="z-index:500" onclick="if(event.target===this)closeConfirmModal()">
+  el.innerHTML=`<div class="modal-overlay" style="z-index:500" onclick="if(event.target===this&&window._ovMd===this)closeConfirmModal()">
     <div class="modal-box" onclick="event.stopPropagation()">
       <div class="note-popover-hdr"><span>${escAttr(title)}</span><button onclick="closeConfirmModal()" style="background:none;border:none;cursor:pointer;font-size:14px;font-weight:700;color:var(--dkgrey)">×</button></div>
       <div style="padding:16px">
@@ -8090,9 +8255,48 @@ function renderCrmModal(){
   else if(crmEventModal!==null)el.innerHTML=crmEventModalHTML();
   else el.innerHTML='';
 }
-function crmCloseModals(){crmEditingInter=null;crmContactModal=null;crmOrgModal=null;crmEventModal=null;crmAddModal=false;crmLogModal=false;crmShowDoneActions=false;crmNewContactOrg=null;
+function crmCloseModals(){_crmXArm=false;crmEditingInter=null;crmContactModal=null;crmOrgModal=null;crmEventModal=null;crmAddModal=false;crmLogModal=false;crmShowDoneActions=false;crmNewContactOrg=null;
   for(const id of ['crm-act-typeahead','crm-add-name-suggest']){const el=document.getElementById(id);if(el)el.style.display='none';}}
 window.crmModalClose=()=>{crmCloseModals();render();};
+// Backdrop click on a CRM modal: ignore drag-outs (press started inside the
+// box), and if the form holds anything typed or changed, keep the window open
+// with a toast — only Cancel / × discard. Fixes lost conversation notes that
+// vanished mid-typing when a text selection slipped off the modal (Joe, 13 Aug).
+function crmModalDirty(box){
+  try{
+    for(const el of box.querySelectorAll('input,textarea')){
+      if(el.type==='checkbox'||el.type==='radio'){if(el.checked!==el.defaultChecked)return true;}
+      else if((el.value||'')!==(el.defaultValue||''))return true;
+    }
+    for(const sl of box.querySelectorAll('select')){
+      let di=-1;for(let k=0;k<sl.options.length;k++)if(sl.options[k].defaultSelected){di=k;break;}
+      if(sl.selectedIndex!==(di<0?0:di))return true;
+    }
+  }catch(e){}
+  return false;
+}
+window.crmOverlayClick=function(ev){
+  if(ev.target!==ev.currentTarget)return;
+  if(window._ovMd!==ev.currentTarget)return; // press began inside — a drag-out, never a close
+  const box=ev.currentTarget.querySelector('.modal-box');
+  if(box&&crmModalDirty(box)){undoToast('Unsaved changes — \u201cSave and close\u201d keeps them, or click \u00d7 twice to discard');return;}
+  crmModalClose();
+};
+// The header ×: a dirty form arms on the first click (warning toast) and only
+// discards on the second — nobody loses typed details to a reflex × any more.
+// The arm resets whenever any CRM modal opens or closes (crmCloseModals).
+let _crmXArm=false;
+window.crmModalX=function(btn){
+  try{
+    const box=btn&&btn.closest?btn.closest('.modal-box'):null;
+    if(box&&crmModalDirty(box)&&!_crmXArm){
+      _crmXArm=true;
+      undoToast('Unsaved changes — click \u00d7 again to discard them, or use \u201cSave and close\u201d');
+      return;
+    }
+  }catch(e){}
+  crmModalClose();
+};
 window.crmOpenContact=id=>{crmCloseModals();crmContactModal=id;if(st._tab!=='crm')st._tab='crm';render();};
 window.crmOpenOrg=id=>{crmCloseModals();crmOrgModal=id;if(st._tab!=='crm')st._tab='crm';render();};
 window.crmOpenAdd=()=>{crmCloseModals();crmAddModal=true;render();};
@@ -8103,9 +8307,9 @@ window.crmOpenNewEvent=()=>{crmCloseModals();crmEventModal='new';render();};
 const crmL=t=>`<label style="font-size:11.5px;color:var(--dkgrey);font-weight:600;display:block;margin-bottom:4px">${t}</label>`;
 const crmT=t=>`<div class="fsec-title">${t}</div>`;
 function crmModalShell(title,body,footer,width){
-  return`<div class="modal-overlay" onclick="if(event.target===this)crmModalClose()">
+  return`<div class="modal-overlay" onclick="crmOverlayClick(event)">
     <div class="modal-box" onclick="event.stopPropagation()" style="max-width:${width||860}px;width:94vw;max-height:92vh;overflow-y:auto;padding:0">
-      <div style="position:sticky;top:0;background:#fff;z-index:2;display:flex;justify-content:space-between;align-items:center;padding:15px 22px;border-bottom:1px solid var(--mid)"><span style="font-size:16px;font-weight:700;color:var(--blk)">${title}</span><button onclick="crmModalClose()" style="background:var(--off);border:none;border-radius:50%;width:28px;height:28px;cursor:pointer;font-size:14px;font-weight:700;color:var(--dkgrey)">×</button></div>
+      <div style="position:sticky;top:0;background:#fff;z-index:2;display:flex;justify-content:space-between;align-items:center;padding:15px 22px;border-bottom:1px solid var(--mid)"><span style="font-size:16px;font-weight:700;color:var(--blk)">${title}</span><button onclick="crmModalX(this)" title="Close — unsaved changes warn first" style="background:var(--off);border:none;border-radius:50%;width:28px;height:28px;cursor:pointer;font-size:14px;font-weight:700;color:var(--dkgrey)">×</button></div>
       <div style="padding:20px 22px">${body}</div>
       <div class="note-popover-footer" style="position:sticky;bottom:0;background:#fff;padding:12px 18px">${footer}</div>
     </div>
@@ -8163,8 +8367,8 @@ function crmAddModalHTML(){
     </div>
     <div style="font-size:10px;color:var(--grey);margin-top:4px">No @? It's assigned to you.</div>
   </div>`;
-  const footer=`<button class="btn btn-sm" onclick="crmModalClose()">Cancel</button>
-    <button class="btn btn-primary crm-addbtn" onclick="crmSaveAdd()">Add to CRM</button>`;
+  const footer=`<button class="btn btn-sm" onclick="crmModalClose()">Discard</button>
+    <button class="btn btn-primary crm-addbtn" onclick="crmSaveAdd()">Save and close</button>`;
   return crmModalShell('Add to CRM',body,footer,760);
 }
 // Dedupe-as-you-type on the person field: matching existing contacts drop down;
@@ -8203,11 +8407,13 @@ window.crmSaveAdd=function(){
     if(noteTxt)st.crmInteractions.push({id:crmId('ci'),date:val('crm-add-note-date')||crmTodayISO(),by:me,note:noteTxt,contactIds:[c.id],orgIds:[]});
     const actTxt=(val('crm-add-act')||'').trim();
     if(actTxt)st.crmActions.push({id:crmId('ca'),text:actTxt,owner:crmMentionOwner(actTxt)||me,due:val('crm-add-act-due')||null,done:false,doneAt:null,doneBy:null,createdBy:me,createdAt:crmTodayISO(),contactId:c.id,orgId:null});
-    crmCloseModals();crmContactModal=c.id;      // open the card so everything just added is visible
+    crmCloseModals(); // straight back to the list — no second window (Joe, 13 Aug); the toast confirms what landed
+    undoToast(`Added ${c.name}${org?' — '+org.name:''} to the CRM${noteTxt?' · conversation logged':''}${actTxt?' · action added':''}`);
   }else{
     org.rating=rating;
     if(val('crm-add-type').trim())org.notes=(org.notes?org.notes+'\n':'')+val('crm-add-type').trim();
-    crmCloseModals();crmOrgModal=org.id;
+    crmCloseModals();
+    undoToast('Added '+org.name+' to the CRM');
   }
   save();render();
 }
@@ -8232,8 +8438,8 @@ function crmLogModalHTML(){
       <div><label style="font-size:10px;color:var(--dkgrey);font-weight:600;display:block;margin-bottom:2px">Due by</label><input type="date" id="crm-log-due" style="width:135px"/></div>
     </div>
   </div>`;
-  const footer=`<button class="btn btn-sm" onclick="crmModalClose()">Cancel</button>
-    <button class="btn btn-primary crm-addbtn" onclick="crmSaveLog()">Log it</button>`;
+  const footer=`<button class="btn btn-sm" onclick="crmModalClose()">Discard</button>
+    <button class="btn btn-primary crm-addbtn" onclick="crmSaveLog()">Save and close</button>`;
   return crmModalShell('Log a conversation',body,footer,700);
 }
 window.crmSaveLog=function(){
@@ -8282,8 +8488,7 @@ function crmContactModalHTML(){
   <div class="fsec">${crmT('Sectors')}<div style="display:flex;gap:6px;flex-wrap:wrap">${crmSectors().map(s=>`<label class="crm-chip" style="background:var(--wht);border-color:${crmSecColor(s)};color:${crmSecColor(s)}"><input type="checkbox" class="crm-c-sec" value="${escAttr(s)}" ${c.sectors.includes(s)?'checked':''} style="margin:0 5px 0 0"/>${escAttr(s)}</label>`).join('')}</div></div>`;
   body+=crmTimelineSection('contact',c)+crmActionsSection('contact',c.id)+crmLinksSection(c)+crmContactEventsSection(c);
   const footer=`${canManage()?`<button class="btn btn-danger btn-sm" style="margin-right:auto" onclick="crmTriggerDeleteContact('${jsq(c.id)}')">Delete contact</button>`:''}
-    <button class="btn btn-sm" onclick="crmModalClose()">Close</button>
-    <button class="btn btn-primary btn-sm" onclick="crmSaveContact()">Save</button>`;
+    <button class="btn btn-primary btn-sm" onclick="crmSaveContact()">Save and close</button>`;
   return crmModalShell(escAttr(c.name),body,footer);
 }
 function crmLinksSection(c){
@@ -8518,8 +8723,7 @@ function crmOrgModalHTML(){
   body+=crmTimelineSection('org',o)+crmActionsSection('org',o.id);
   const delDisabled=ppl.length>0;
   const footer=`${canManage()?`<span style="margin-right:auto;display:inline-flex;align-items:center;gap:8px" ${delDisabled?'title="A company can\'t be deleted while it still has people — open each contact and move or delete them first"':''}><button class="btn btn-danger btn-sm" ${delDisabled?'disabled':''} onclick="crmTriggerDeleteOrg('${jsq(o.id)}')">Delete company</button>${delDisabled?`<span style="font-size:10px;color:var(--grey)">has ${ppl.length} ${ppl.length===1?'person':'people'} — move or delete them first</span>`:''}</span>`:''}
-    <button class="btn btn-sm" onclick="crmModalClose()">Close</button>
-    <button class="btn btn-primary btn-sm" onclick="crmSaveOrg()">Save</button>`;
+    <button class="btn btn-primary btn-sm" onclick="crmSaveOrg()">Save and close</button>`;
   return crmModalShell(escAttr(o.name)+(client&&nProj?' <span class="badge badge-ok" style="margin-left:8px">Active client</span>':''),body,footer);
 }
 window.crmSaveOrg=function(){
@@ -8609,8 +8813,7 @@ function crmEventModalHTML(){
     </div>`;
   }
   const footer=`${canManage()&&!isNew?`<button class="btn btn-danger btn-sm" style="margin-right:auto" onclick="crmTriggerDeleteEvent('${jsq(e.id)}')">Delete event</button>`:''}
-    <button class="btn btn-sm" onclick="crmModalClose()">Close</button>
-    <button class="btn btn-primary btn-sm" onclick="crmSaveEvent()">${isNew?'Add event':'Save'}</button>`;
+    <button class="btn btn-primary btn-sm" onclick="crmSaveEvent()">${isNew?'Add event':'Save and close'}</button>`;
   return crmModalShell(isNew?'New event':escAttr(e.name),body,footer);
 }
 // Write/adjust the event's Marketing and BD time: withdraw previous writes, then
@@ -8993,14 +9196,20 @@ window.mobAddRow=function(pn,stg){
 // ── CRM ──────────────────────────────────────────────────────────────────────
 const MOB_RATE_EDGE={hot:'#C0392B',warm:'#DFA64F',cold:'#7FA8C9',dormant:'#C9C3BA'};
 function mobCrmLastTouch(cid){let best=null;for(const i of st.crmInteractions){if((i.contactIds||[]).includes(cid)&&(!best||i.date>best.date))best=i;}return best;}
-window.mobCrmSearch=function(el){mobCrmQ=el.value;render();}
+window.mobCrmSearch=function(el){
+  mobCrmQ=el.value;
+  const box=document.getElementById('mob-crm-list');
+  if(box)box.innerHTML=mobCrmListHTML();else render();
+}
 window.mobCrmFiltRate=function(r){const i=mobCrmRateFilt.indexOf(r);if(i>=0)mobCrmRateFilt.splice(i,1);else mobCrmRateFilt.push(r);render();}
 window.mobCrmFiltNever=function(){mobCrmNever=!mobCrmNever;render();}
 window.mobCrmOpen=function(id){mobCrmView=id;mobConvArm=null;render();}
 window.mobCrmBack=function(){mobCrmView=null;mobConvArm=null;render();}
 window.mobCrmRate=function(id,r){const c=st.crmContacts.find(x=>x.id===id);if(!c)return;c.rating=r;save();render();}
-function buildMobCRM(){
-  if(mobCrmView)return mobCrmView.startsWith('co')?buildMobOrg(mobCrmView):buildMobContact(mobCrmView);
+// Results list built separately so typing can refresh it IN PLACE — a full
+// render() rebuilds the search input, and iOS Safari dismisses the keyboard
+// on every letter (Joe, 13 Aug). mobCrmSearch swaps only #mob-crm-list.
+function mobCrmListHTML(){
   const q=mobCrmQ.trim().toLowerCase();
   let list=st.crmContacts.slice();
   if(q)list=list.filter(c=>{const o=c.orgId?st.crmOrgs.find(x=>x.id===c.orgId):null;return c.name.toLowerCase().includes(q)||(o&&o.name.toLowerCase().includes(q))||(c.type||'').toLowerCase().includes(q);});
@@ -9019,14 +9228,7 @@ function buildMobCRM(){
   }
   list.sort((a,b)=>{const ta=mobCrmLastTouch(a.id),tb=mobCrmLastTouch(b.id);return(tb?tb.date:'0000').localeCompare(ta?ta.date:'0000')||a.name.localeCompare(b.name);});
   orgRows.sort((a,b)=>{const ta=crmLastTouchOrg(a.id),tb=crmLastTouchOrg(b.id);return(tb?tb.date:'0000').localeCompare(ta?ta.date:'0000')||a.name.localeCompare(b.name);});
-  let h=`<input class="mob-search" placeholder="Search people and companies…" value="${escAttr(mobCrmQ)}" oninput="mobCrmSearch(this)"/>`;
-  h+=`<div style="display:flex;gap:5px;flex-wrap:wrap;margin:0 0 10px">${['hot','warm','cold','dormant'].map(r=>`<button class="mob-chip ${mobCrmRateFilt.includes(r)?'':'mut'}" style="border:none;cursor:pointer;font-family:inherit;${mobCrmRateFilt.includes(r)?`background:${MOB_RATE_EDGE[r]}22;color:${MOB_RATE_EDGE[r]}`:''}" onclick="mobCrmFiltRate('${r}')">${CRM_RATE_LABEL[r]}</button>`).join('')}<button class="mob-chip ${mobCrmNever?'bad':'mut'}" style="border:none;cursor:pointer;font-family:inherit" onclick="mobCrmFiltNever()" title="No conversation ever logged — the cold-call list">Never contacted</button></div>`;
-  h+=`<div style="display:flex;gap:8px;margin:0 0 10px"><button class="mob-btn" style="margin:0;flex:1" onclick="mobSheetOpen('newcontact')">+ New contact</button><button class="mob-btn sec" style="margin:0;flex:1" onclick="mobSheetOpen('newevent')">+ New event</button></div>`;
-  const today=isoDate(new Date());
-  const upcoming=st.crmEvents.filter(e=>e.start&&(e.end||e.start)>=today).sort((a,b)=>a.start.localeCompare(b.start)).slice(0,5);
-  if(upcoming.length){
-    h+=`<div class="mob-card" style="margin:0 0 10px"><div class="mc-title">Upcoming events</div>${upcoming.map(e=>`<div class="mob-act" style="display:flex;justify-content:space-between;align-items:center;cursor:pointer" onclick="mobSheetOpen('ev','${jsq(e.id)}')"><div><b>${escAttr(e.name)}</b><div style="font-size:11px;color:var(--grey)">${fmt(parseISO(e.start))}${e.end&&e.end!==e.start?' – '+fmt(parseISO(e.end)):''}${(e.staff||[]).length?` · ${e.staff.length} going`:''}</div></div><span style="color:var(--grey)">›</span></div>`).join('')}</div>`;
-  }
+  let h='';
   for(const c of list.slice(0,60)){
     const o=c.orgId?st.crmOrgs.find(x=>x.id===c.orgId):null;
     const t=mobCrmLastTouch(c.id);
@@ -9037,6 +9239,19 @@ function buildMobCRM(){
     h+=`<div class="mob-list-item" style="border-left-color:${MOB_RATE_EDGE[crmOrgRating(o)]||'#C9C3BA'};border-left-style:dashed" onclick="mobCrmOpen('${jsq(o.id)}')"><div class="ml-main"><div class="ml-t">${escAttr(o.name)}</div><div class="ml-s">Company — nobody here yet</div>${t?`<div class="ml-s" style="color:var(--grey)">${fmt(parseISO(t.date))} — ${escAttr(t.note.slice(0,70))}${t.note.length>70?'…':''}</div>`:''}</div><span style="color:var(--grey)">›</span></div>`;
   }
   if(!list.length&&!orgRows.length)h+=`<div style="font-size:12px;color:var(--grey);padding:8px 2px">${q||mobCrmRateFilt.length||mobCrmNever?'Nothing matches.':'No contacts yet.'}</div>`;
+  return h;
+}
+function buildMobCRM(){
+  if(mobCrmView)return mobCrmView.startsWith('co')?buildMobOrg(mobCrmView):buildMobContact(mobCrmView);
+  let h=`<input class="mob-search" placeholder="Search people and companies…" value="${escAttr(mobCrmQ)}" oninput="mobCrmSearch(this)"/>`;
+  h+=`<div style="display:flex;gap:5px;flex-wrap:wrap;margin:0 0 10px">${['hot','warm','cold','dormant'].map(r=>`<button class="mob-chip ${mobCrmRateFilt.includes(r)?'':'mut'}" style="border:none;cursor:pointer;font-family:inherit;${mobCrmRateFilt.includes(r)?`background:${MOB_RATE_EDGE[r]}22;color:${MOB_RATE_EDGE[r]}`:''}" onclick="mobCrmFiltRate('${r}')">${CRM_RATE_LABEL[r]}</button>`).join('')}<button class="mob-chip ${mobCrmNever?'bad':'mut'}" style="border:none;cursor:pointer;font-family:inherit" onclick="mobCrmFiltNever()" title="No conversation ever logged — the cold-call list">Never contacted</button></div>`;
+  h+=`<div style="display:flex;gap:8px;margin:0 0 10px"><button class="mob-btn" style="margin:0;flex:1" onclick="mobSheetOpen('newcontact')">+ New contact</button><button class="mob-btn sec" style="margin:0;flex:1" onclick="mobSheetOpen('newevent')">+ New event</button></div>`;
+  const today=isoDate(new Date());
+  const upcoming=st.crmEvents.filter(e=>e.start&&(e.end||e.start)>=today).sort((a,b)=>a.start.localeCompare(b.start)).slice(0,5);
+  if(upcoming.length){
+    h+=`<div class="mob-card" style="margin:0 0 10px"><div class="mc-title">Upcoming events</div>${upcoming.map(e=>`<div class="mob-act" style="display:flex;justify-content:space-between;align-items:center;cursor:pointer" onclick="mobSheetOpen('ev','${jsq(e.id)}')"><div><b>${escAttr(e.name)}</b><div style="font-size:11px;color:var(--grey)">${fmt(parseISO(e.start))}${e.end&&e.end!==e.start?' – '+fmt(parseISO(e.end)):''}${(e.staff||[]).length?` · ${e.staff.length} going`:''}</div></div><span style="color:var(--grey)">›</span></div>`).join('')}</div>`;
+  }
+  h+=`<div id="mob-crm-list">`+mobCrmListHTML()+`</div>`;
   return h;
 }
 // The company card — the cold-call row's destination. org.rating is the
