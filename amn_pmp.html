@@ -618,8 +618,8 @@ const STORE_KEY='amn_tracker_v1';
 // The newest build anyone opens records its number in the shared state
 // (st.meta.appBuild); a copy whose APP_BUILD is lower shows a "reopen from
 // SharePoint" banner. APP_VERSION_LABEL is the human-facing date, display only.
-const APP_BUILD=26;
-const APP_VERSION_LABEL='13 Aug 2026';
+const APP_BUILD=27;
+const APP_VERSION_LABEL='17 Aug 2026';
 
 let _sbSession=null;
 let _sbSaveTimer=null;
@@ -4760,8 +4760,8 @@ function buildProjects(){
         <div style="flex:0 0 90px"><label>Project #</label><input id="np-code" placeholder="2401"/></div>
         <div style="flex:2;min-width:130px"><label>Project name</label><input id="np-name" placeholder="House Extension"/></div>
         <div style="flex:0 0 auto;align-self:flex-end"><button class="btn-add" type="button" onclick="openAddClientModal('np')" style="font-size:12px;padding:9px 16px;white-space:nowrap" title="Add a new client — a person, a company, or both">+ New client</button></div>
-        <div style="flex:1;min-width:120px"><label>Company</label><select id="np-client"><option value="">— none —</option>${st.clients.map(c=>`<option value="${c.id}">${c.company}</option>`).join('')}</select></div>
-        <div style="flex:1;min-width:120px"><label>Contact</label><select id="np-contact"><option value="">— none —</option>${st.crmContacts.slice().sort((a,b)=>a.name.localeCompare(b.name)).map(c=>{const o=c.orgId?st.crmOrgs.find(x=>x.id===c.orgId):null;return`<option value="${c.id}">${escAttr(c.name)}${o?' ('+escAttr(o.name)+')':''}</option>`;}).join('')}</select></div>
+        <div style="flex:1;min-width:120px"><label>Company</label><select id="np-client">${projClientOptions('')}</select></div>
+        <div style="flex:1;min-width:120px"><label>Contact</label><select id="np-contact" onchange="projContactPick(this,'np-client','np-cohint')"><option value="">— none —</option>${st.crmContacts.slice().sort((a,b)=>a.name.localeCompare(b.name)).map(c=>{const o=c.orgId?st.crmOrgs.find(x=>x.id===c.orgId):null;return`<option value="${c.id}">${escAttr(c.name)}${o?' ('+escAttr(o.name)+')':''}</option>`;}).join('')}</select><div id="np-cohint" style="font-size:10px;color:var(--dkgrey);margin-top:3px;min-height:12px"></div></div>
         <div style="flex:1;min-width:130px"><label>Fee structure</label><select id="np-feemode" onchange="document.getElementById('np-totalfee-wrap').style.display=this.value==='total'?'block':'none'"><option value="stage">Fee per stage</option><option value="total">Single total fee</option></select></div>
         <div style="flex:0 0 110px;display:none" id="np-totalfee-wrap"><label>Total fee (£)</label><input id="np-totalfee" type="number" placeholder="150000"/></div>
       </div>
@@ -4961,10 +4961,10 @@ function buildProjEdit(i){
       <div style="flex:0 0 90px"><label>Project #</label><input id="ec-code-${i}" value="${escAttr(epv('ec-code',p.code))}"/></div>
       <div style="flex:2;min-width:130px"><label>Project name</label><input id="ec-name-${i}" value="${escAttr(epv('ec-name',p.name))}"/></div>
       <div style="flex:0 0 auto;align-self:flex-end"><button class="btn-add" type="button" onclick="openAddClientModal('ec-'+${i})" style="font-size:12px;padding:9px 16px;white-space:nowrap" title="Add a new client — a person, a company, or both">+ New client</button></div>
-      <div style="flex:1;min-width:120px"><label>Company</label><select id="ec-client-${i}"><option value="">— none —</option>${st.clients.map(c=>`<option value="${c.id}"${epv('ec-client',p.clientId||'')===c.id?' selected':''}>${c.company}</option>`).join('')}</select></div>
+      <div style="flex:1;min-width:120px"><label>Company</label><select id="ec-client-${i}">${projClientOptions(epv('ec-client',p.clientId||''))}</select></div>
     </div>
     <div class="row">
-      <div style="flex:1;min-width:120px"><label>Contact</label><select id="ec-contact-${i}"><option value="">— none —</option>${st.crmContacts.slice().sort((a,b)=>a.name.localeCompare(b.name)).map(c=>{const o=c.orgId?st.crmOrgs.find(x=>x.id===c.orgId):null;return`<option value="${c.id}"${epv('ec-contact',p.contactId||'')===c.id?' selected':''}>${escAttr(c.name)}${o?' ('+escAttr(o.name)+')':''}</option>`;}).join('')}</select></div>
+      <div style="flex:1;min-width:120px"><label>Contact</label><select id="ec-contact-${i}" onchange="projContactPick(this,'ec-client-${i}','ec-cohint-${i}')"><option value="">— none —</option>${st.crmContacts.slice().sort((a,b)=>a.name.localeCompare(b.name)).map(c=>{const o=c.orgId?st.crmOrgs.find(x=>x.id===c.orgId):null;return`<option value="${c.id}"${epv('ec-contact',p.contactId||'')===c.id?' selected':''}>${escAttr(c.name)}${o?' ('+escAttr(o.name)+')':''}</option>`;}).join('')}</select><div id="ec-cohint-${i}" style="font-size:10px;color:var(--dkgrey);margin-top:3px;min-height:12px"></div></div>
       <div style="flex:1;min-width:120px"><label>Start date</label><input id="ec-start-${i}" type="date" value="${escAttr(epv('ec-start',p.startDate||''))}"/></div>
       <div style="flex:1;min-width:120px"><label>End date</label><input id="ec-end-${i}" type="date" value="${escAttr(epv('ec-end',p.endDate||''))}"/></div>
     </div>`);
@@ -7048,7 +7048,7 @@ window.saveProjEdit=function(i){
   // rendered into the draft, then read draft-first with the stored value as fallback.
   epHarvest(i);const p0=st.projects[i];
   const gv=(id,fb)=>projEditDraft[id]!==undefined?projEditDraft[id]:(fb??'');
-  const code=String(gv('ec-code',p0.code)).trim(),name=String(gv('ec-name',p0.name)).trim(),clientId=gv('ec-client',p0.clientId||'')||null,startDate=gv('ec-start',p0.startDate||'')||null,endDate=gv('ec-end',p0.endDate||'')||null;if(!name)return;const oldName=st.projects[i].name;if(name!==oldName&&st.projects.some(p=>p.name===name)){undoToast('A project with that name already exists.');return;}const client=st.clients.find(c=>c.id===clientId);st.projects[i].code=code;st.projects[i].name=name;st.projects[i].clientId=clientId;const contactId2=gv('ec-contact',p0.contactId||'')||null;st.projects[i].clientName=client?.company||null;st.projects[i].contactId=contactId2;st.projects[i].startDate=startDate;st.projects[i].endDate=endDate;st.projects[i].feeNotes=String(gv('ep-notes',p0.feeNotes||''));st.projects[i].projNotes=String(gv('ep-pnotes',p0.projNotes||''));
+  const code=String(gv('ec-code',p0.code)).trim(),name=String(gv('ec-name',p0.name)).trim(),clientId=resolveProjClientId(gv('ec-client',p0.clientId||'')),startDate=gv('ec-start',p0.startDate||'')||null,endDate=gv('ec-end',p0.endDate||'')||null;if(!name)return;const oldName=st.projects[i].name;if(name!==oldName&&st.projects.some(p=>p.name===name)){undoToast('A project with that name already exists.');return;}const client=st.clients.find(c=>c.id===clientId);st.projects[i].code=code;st.projects[i].name=name;st.projects[i].clientId=clientId;const contactId2=gv('ec-contact',p0.contactId||'')||null;st.projects[i].clientName=client?.company||null;st.projects[i].contactId=contactId2;st.projects[i].startDate=startDate;st.projects[i].endDate=endDate;st.projects[i].feeNotes=String(gv('ep-notes',p0.feeNotes||''));st.projects[i].projNotes=String(gv('ep-pnotes',p0.projNotes||''));
   // If project name changed, migrate every store keyed by project name
   if(oldName!==name)renameProjectEverywhere(oldName,name);
   editingProj=null;projEditDraft={};save();render();}
@@ -7173,7 +7173,59 @@ function refreshHrsUI(wk,person){
 }
 window.logT=function(el){sE(el.dataset.wk,el.dataset.pj,el.dataset.ph,el.dataset.pe,parseInt(el.dataset.d),el.value);const tr=el.closest('tr');const tc=tr.querySelector('.total-col,.total-cell');if(tc){const d=parseInt(el.dataset.d);const isOT=d>=7;let t=0;if(isOT){for(let i=7;i<14;i++)t+=parseFloat(gE(el.dataset.wk,el.dataset.pj,el.dataset.ph,el.dataset.pe,i))||0;}else{const days=tr.querySelectorAll('input.tinput').length;for(let i=0;i<days;i++)t+=parseFloat(gE(el.dataset.wk,el.dataset.pj,el.dataset.ph,el.dataset.pe,i))||0;}tc.textContent=t||'';}refreshHrsUI(el.dataset.wk,el.dataset.pe);}
 window.addPR=function(){const ph=document.getElementById('np-ph').value.trim(),fee=document.getElementById('np-pf').value;if(!ph)return;const list=document.getElementById('np-phases');const tag=document.createElement('span');tag.className='phase-tag';tag.dataset.name=ph;tag.dataset.fee=fee||'';tag.dataset.active='true';tag.innerHTML=`${ph}${fee?` · £${Number(fee).toLocaleString('en-GB')}`:''}  <span style="cursor:pointer;opacity:.5" onclick="this.parentElement.remove()">×</span>`;list.appendChild(tag);document.getElementById('np-ph').value='';document.getElementById('np-pf').value='';document.getElementById('np-ph').focus();}
-window.addProj=function(){const code=document.getElementById('np-code').value.trim(),name=document.getElementById('np-name').value.trim(),clientId=document.getElementById('np-client').value||null,startDate=document.getElementById('np-start').value||null,endDate=document.getElementById('np-end').value||null;if(!name)return;if(st.projects.find(p=>p.name===name))return;const client=st.clients.find(c=>c.id===clientId);const phases=[...document.querySelectorAll('#np-phases .phase-tag')].map(t=>({name:t.dataset.name,fee:parseFloat(t.dataset.fee)||null,active:true}));const fmEl=document.getElementById('np-feemode');const feeMode=fmEl&&fmEl.value==='total'?'total':'stage';const tfEl=document.getElementById('np-totalfee');const totalFee=feeMode==='total'?(parseFloat(tfEl&&tfEl.value)||0):0;const contactId=document.getElementById('np-contact')?.value||null;const np={code,name,clientId,clientName:client?.company||null,contactId,startDate,endDate,phases,feeMode,totalFee,rateOverrides:{},feeNotes:'',projNotes:''};ensureRibaStages(np);st.projects.push(np);st._projAddOpen=false;save();render();}
+// ── Project company picker ────────────────────────────────────────────────────
+// One list of every company the practice knows, so a company added in the CRM
+// is selectable here immediately. Existing billing clients come first; the rest
+// follow in a second group and are promoted to clients when the project saves.
+// Values in that second group are prefixed "org:" — resolveProjClientId() turns
+// one back into a real client id.
+function projClientOptions(selected){
+  selected=selected||'';
+  const clients=st.clients.slice().sort((a,b)=>String(a.company||'').localeCompare(String(b.company||''),'en',{sensitivity:'base'}));
+  const linked=new Set(st.crmOrgs.filter(o=>o.clientId&&st.clients.some(c=>c.id===o.clientId)).map(o=>o.clientId));
+  const others=st.crmOrgs.filter(o=>!(o.clientId&&st.clients.some(c=>c.id===o.clientId)))
+    .slice().sort((a,b)=>String(a.name||'').localeCompare(String(b.name||''),'en',{sensitivity:'base'}));
+  let h=`<option value="">— none —</option>`;
+  if(clients.length)h+=`<optgroup label="Clients">${clients.map(c=>`<option value="${escAttr(c.id)}"${selected===c.id?' selected':''}>${escAttr(c.company||'')}</option>`).join('')}</optgroup>`;
+  if(others.length)h+=`<optgroup label="Not yet a client — will be added">${others.map(o=>`<option value="org:${escAttr(o.id)}"${selected==='org:'+o.id?' selected':''}>${escAttr(o.name||'')}</option>`).join('')}</optgroup>`;
+  return h;
+}
+// "org:<id>" → a real client id, promoting the company if this is its first
+// project. Anything else passes straight through.
+function resolveProjClientId(v){
+  v=v||'';
+  if(!v)return null;
+  if(v.slice(0,4)!=='org:')return v;
+  const o=crmOrg(v.slice(4));
+  if(!o)return null;
+  return crmEnsureClientForOrg(o.id)||null;
+}
+// The value a given contact's company should hold in the picker, or '' if the
+// contact has no company.
+function projClientValueForContact(ct){
+  const o=ct&&ct.orgId?crmOrg(ct.orgId):null;
+  if(!o)return '';
+  return (o.clientId&&st.clients.some(c=>c.id===o.clientId))?o.clientId:'org:'+o.id;
+}
+// Picking a contact keeps the Company box honest — a contact's own company
+// wins. Pure DOM: both project forms hold unsaved typing, so never render().
+window.projContactPick=function(sel,clientSelId,hintId){
+  const hint=document.getElementById(hintId);
+  const cs=document.getElementById(clientSelId);
+  if(hint)hint.textContent='';
+  if(!cs||!sel)return;
+  const ct=sel.value?crmContact(sel.value):null;
+  if(!ct)return;
+  const want=projClientValueForContact(ct);
+  if(!want||cs.value===want)return;
+  const had=cs.value;
+  const opts=cs.options?[...cs.options]:[];
+  if(opts.length&&!opts.some(o=>o.value===want))return;
+  cs.value=want;
+  const o=crmOrg(ct.orgId);
+  if(hint&&o)hint.textContent=had?`Company switched to ${o.name} — ${ct.name}'s company.`:`Company set to ${o.name}.`;
+}
+window.addProj=function(){const code=document.getElementById('np-code').value.trim(),name=document.getElementById('np-name').value.trim(),clientId=resolveProjClientId(document.getElementById('np-client').value),startDate=document.getElementById('np-start').value||null,endDate=document.getElementById('np-end').value||null;if(!name)return;if(st.projects.find(p=>p.name===name))return;const client=st.clients.find(c=>c.id===clientId);const phases=[...document.querySelectorAll('#np-phases .phase-tag')].map(t=>({name:t.dataset.name,fee:parseFloat(t.dataset.fee)||null,active:true}));const fmEl=document.getElementById('np-feemode');const feeMode=fmEl&&fmEl.value==='total'?'total':'stage';const tfEl=document.getElementById('np-totalfee');const totalFee=feeMode==='total'?(parseFloat(tfEl&&tfEl.value)||0):0;const contactId=document.getElementById('np-contact')?.value||null;const np={code,name,clientId,clientName:client?.company||null,contactId,startDate,endDate,phases,feeMode,totalFee,rateOverrides:{},feeNotes:'',projNotes:''};ensureRibaStages(np);st.projects.push(np);st._projAddOpen=false;save();render();}
 window.setFeeMode=function(i,mode){st.projects[i].feeMode=mode;save();render();}
 window.updTotalFee=function(i,v){st.projects[i].totalFee=parseFloat(v)||0;save();render();}
 window.addPhToP=function(i){const ph=document.getElementById(`ep-ph-${i}`).value.trim(),fee=parseFloat(document.getElementById(`ep-pf-${i}`).value)||null;if(!ph)return;if(!st.projects[i].phases)st.projects[i].phases=[];if(!st.projects[i].phases.find(p=>p.name===ph))st.projects[i].phases.push({name:ph,fee,active:true});save();render();}
@@ -7884,7 +7936,7 @@ const HELP_TEXT={
     <p style="margin:0 0 8px"><b>Notes.</b> <b>Project notes</b> (admins and PMs) are the running record; <b>Fee notes</b> (admins only) hold free-text fee history and commentary, including everything imported from Harvest.</p>
     <p style="margin:0"><b>Archiving.</b> Archived projects drop out of the main list and the forecast but keep all their time. Deleting a project sends it, and its time, to Deleted Items.</p>`},
   clients:{title:'How clients work',body:`
-    <p style="margin:0 0 8px"><b>Clients live in the CRM.</b> Every company on the CRM's Contacts list can be made available to projects; once it has a project, it shows a <b>client</b> badge automatically.</p>
+    <p style="margin:0 0 8px"><b>Clients live in the CRM.</b> Every company on the CRM's Contacts list can be picked straight from the Company box when you add a project — it joins the client list at that moment. The button on a company's card does the same thing ahead of time. Once it has a project, it shows a <b>client</b> badge automatically.</p>
     <p style="margin:0">This page lists the client records that projects bill against. Renaming a company in the CRM keeps everything here in step.</p>`},
   team:{title:'How the team page works',body:`
     <p style="margin:0 0 8px"><b>One row per person.</b> The table shows the selected week: <b>Scheduled</b> (forecast), <b>Hours</b> (logged), the <b>Delta</b> between them, and a utilisation bar — dark for billable time, light for non-billable — against each person's real capacity (part-time hours and bank holidays are respected). Use the arrows to step between weeks.</p>
@@ -8741,12 +8793,25 @@ window.crmSaveOrg=function(){
   crmCloseModals();   // Save commits and closes, matching the contact card
   save();render();
 }
+// Promote a CRM company to a billing client. This is the shared core behind
+// BOTH the company card's "Make available to projects" button and the project
+// forms' company picker (a company chosen from the "Not yet a client" group is
+// promoted on save). Returns the client id; performs no save()/render() of its
+// own — the caller owns those, because the project forms hold unsaved typing.
+function crmEnsureClientForOrg(oid){
+  const o=crmOrg(oid);if(!o)return null;
+  // A clientId can dangle if the client was deleted underneath it — treat that
+  // as unpromoted rather than handing back a dead id.
+  if(o.clientId&&st.clients.some(c=>c.id===o.clientId))return o.clientId;
+  const primary=st.crmContacts.find(c=>c.orgId===oid);
+  const cl={id:'c-'+Date.now()+'-'+Math.random().toString(36).slice(2,6),company:o.name,contact:primary?primary.name:'',email:primary?primary.email||'':'',phone:primary?(primary.phone||primary.mobile||''):''};
+  st.clients.push(cl);o.clientId=cl.id;
+  return cl.id;
+}
 window.crmMarkClient=function(oid){
   const o=crmOrg(oid);if(!o||!canManage())return;
   if(o.clientId&&st.clients.some(c=>c.id===o.clientId))return;
-  const primary=st.crmContacts.find(c=>c.orgId===oid);
-  const cl={id:'c-'+Date.now(),company:o.name,contact:primary?primary.name:'',email:primary?primary.email||'':'',phone:primary?(primary.phone||primary.mobile||''):''};
-  st.clients.push(cl);o.clientId=cl.id;
+  crmEnsureClientForOrg(oid);
   save();render();
 }
 window.crmUnmarkClient=function(oid){
