@@ -427,6 +427,9 @@ tr.plan-krow-nb .plan-cell.plan-weekend-cell:has(.plan-ms-chips){background:repe
 .login-box{max-width:360px;width:100%;background:var(--wht);border:1px solid var(--mid);border-radius:var(--r-xl);box-shadow:0 10px 40px rgba(38,34,30,.08);padding:36px}
 .login-title{font-family:'Figtree',sans-serif;font-size:18px;font-weight:600;margin-bottom:24px;color:var(--blk)}
 .login-outer{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:40px 20px}
+.hsec-tab{border:none;background:none;font-family:'Figtree',sans-serif;font-size:13px;font-weight:600;letter-spacing:.02em;color:var(--dkgrey);padding:9px 20px;cursor:pointer}
+.hsec-tab:hover{color:var(--blk)}
+.hsec-tab.hsec-on{background:var(--blk);color:#fff}
 /* ── CRM ── */
 .crm-rate{display:inline-block;padding:2px 10px;font-size:10px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;font-family:'Figtree',sans-serif;border-radius:999px}
 .crm-rate-hot{background:var(--accent-soft);color:var(--accent)}
@@ -618,8 +621,8 @@ const STORE_KEY='amn_tracker_v1';
 // The newest build anyone opens records its number in the shared state
 // (st.meta.appBuild); a copy whose APP_BUILD is lower shows a "reopen from
 // SharePoint" banner. APP_VERSION_LABEL is the human-facing date, display only.
-const APP_BUILD=28;
-const APP_VERSION_LABEL='19 Aug 2026';
+const APP_BUILD=31;
+const APP_VERSION_LABEL='20 Aug 2026';
 
 let _sbSession=null;
 let _sbSaveTimer=null;
@@ -1081,11 +1084,11 @@ const LOGO='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAHAAAABwCAIAAABJgmMcAA
 const LOGIN_LOGO=`<img src="${LOGO}" style="height:48px;margin-bottom:24px;display:block;border-radius:10px" alt="amn" onerror="this.outerHTML='<div style=\'font-family:Figtree,sans-serif;font-size:20px;font-weight:300;margin-bottom:28px\'>amn architects</div>'"/>`;
 
 let st={meta:{},users:[],projects:[],clients:[],entries:{},forecasts:{},submissions:{},userProjects:{},userStages:{},tsWeekRows:{},cellNotes:{},overtime:{},nbOvertime:{},leave:{},leaveActive:{},nonBillable:{},nonBillableActive:{},planAssignments:[],planRows:{},milestones:[],leaveRows:[],nbRows:[],placeholders:[],planProjectRows:[],planStageRows:{},trash:[],cpd:[],cpdNotices:[],cpdArbTopics:['Fire and life safety','Environmental sustainability'],crmOrgs:[],crmContacts:[],crmInteractions:[],crmActions:[],crmLeads:[],crmEvents:[],crmSectors:null,crmRoles:null,leaveRequests:[],leaveAllowances:{},leaveClosures:[],leaveCarry:{},leaveYearNotes:{},leaveNotices:[],projectMembers:{},currentUser:null,_tab:'home',_projSort:{by:'code',dir:'asc'},_projAddOpen:false};
-let wkOff=0,projTempFilter='',homeHealthIdx=0,healthProj=null,healthChartView='week',planColorState=null,viewingUser=null,openActionMenu=null,editingProj=null,expandedStage=null,expandedNotes=new Set(),editingSubmitted=new Set(),activeNoteCell=null;
+let wkOff=0,projTempFilter='',homeHealthIdx=0,healthProj=null,healthSection='finance',healthChartView='week',planColorState=null,viewingUser=null,openActionMenu=null,editingProj=null,expandedStage=null,expandedNotes=new Set(),editingSubmitted=new Set(),activeNoteCell=null;
 // Edit-project modal: which sections are open, and a draft of typed-but-unsaved
 // input values (harvested on every section toggle so collapsing never loses text).
 let projEditSec={},projEditDraft={};
-const EP_FIELDS={details:['ec-code','ec-name','ec-client','ec-contact','ec-start','ec-end'],pnotes:['ep-pnotes'],feenotes:['ep-notes']};
+const EP_FIELDS={details:['ec-code','ec-name','ec-client','ec-contact','ec-start','ec-end','ec-address','ep-desc','ep-roledesc'],pnotes:['ep-pnotes'],feenotes:['ep-notes']};
 function epHarvest(i){if(i===null||i===undefined)return;for(const ids of Object.values(EP_FIELDS))for(const id of ids){const el=document.getElementById(id+'-'+i);if(el)projEditDraft[id]=el.value;}}
 function epv(id,fallback){return projEditDraft[id]!==undefined?projEditDraft[id]:(fallback??'');}
 window.epTog=function(key){epHarvest(editingProj);projEditSec[key]=!projEditSec[key];render();}
@@ -1186,7 +1189,7 @@ function applyGuards(){
   // project likelihood colours (Joe, 15 Jul) — old colours cleared for a fresh start.
   if(!st.meta.projColorsV2){for(const p of st.projects||[])delete p.planColor;st.meta.projColorsV2=true;}
   // Legacy 'notes' (all Harvest fee history) -> feeNotes; projNotes is the new PM-visible field.
-  for(const p of st.projects||[]){if(p.notes&&!p.feeNotes){p.feeNotes=p.notes;}if('notes'in p)delete p.notes;if(typeof p.feeNotes!=='string')p.feeNotes=p.feeNotes||'';if(typeof p.projNotes!=='string')p.projNotes=p.projNotes||'';ensureRibaStages(p);for(const ph of p.phases||[])if('likelihood'in ph&&![100,40,10,0].includes(ph.likelihood))delete ph.likelihood;normProjInvoices(p);}
+  for(const p of st.projects||[]){if(p.notes&&!p.feeNotes){p.feeNotes=p.notes;}if('notes'in p)delete p.notes;if(typeof p.feeNotes!=='string')p.feeNotes=p.feeNotes||'';if(typeof p.projNotes!=='string')p.projNotes=p.projNotes||'';for(const _mk of['address','description','roleDesc'])if(typeof p[_mk]!=='string')p[_mk]=p[_mk]||'';if(typeof p.comments==='string'&&p.comments.trim()&&!(p.projNotes||'').includes(p.comments.trim())){p.projNotes=((p.projNotes||'').trim()?p.projNotes.trim()+'\n\n':'')+p.comments.trim();}if('comments'in p)delete p.comments;ensureRibaStages(p);for(const ph of p.phases||[])if('likelihood'in ph&&![100,40,10,0].includes(ph.likelihood))delete ph.likelihood;normProjInvoices(p);}
   for(const e of st.cpd||[]){if(!Array.isArray(e.speakers))e.speakers=[];}
   ['users','projects','clients','planAssignments','milestones','leaveRows','nbRows','placeholders','planProjectRows','trash','cpd','cpdNotices','crmOrgs','crmContacts','crmInteractions','crmActions','crmLeads','crmEvents','leaveRequests','leaveClosures','leaveNotices'].forEach(k=>{if(!Array.isArray(st[k]))st[k]=[];});
   st.leaveRequests.forEach(normLeaveReq);
@@ -2982,7 +2985,7 @@ let incSort={by:'code',dir:1},incDrag=null,incDragDone=false,incLikPick=null,inc
 // filter the PROJECT ROWS ONLY — the scenario totals, the Invoiced/VAT actuals
 // row, the chart and the headline stats always cover the whole practice, so
 // hiding rows can never change a number used for cashflow or VAT.
-let incQ='',incHideDorm=false;
+let incQ='',incHideDorm=false,incAllCollapsed=false;
 
 function buildLog(){
   const viewMode=!!viewingUser;
@@ -4480,7 +4483,6 @@ function buildHealthDetail(projName){
       <div>
         <div style="font-family:'Figtree',sans-serif;font-size:28px;font-weight:700;letter-spacing:-.01em;color:var(--blk);line-height:1.15">${proj.name}</div>
         ${client||proj.contactId?`<div style="font-size:13px;color:var(--dkgrey);margin-top:5px;font-weight:500">${client?client.company:''}${(()=>{const ct=proj.contactId?st.crmContacts.find(c=>c.id===proj.contactId):null;return ct?(client?' · ':'')+`<a href="javascript:void(0)" onclick="crmOpenContact('${jsq(ct.id)}')" style="color:var(--dkgrey);text-decoration:underline;text-decoration-style:dotted" title="Open in the CRM">${escAttr(ct.name)}</a>`:'';})()}${(()=>{if(!client)return'';const o=st.crmOrgs.find(x=>x.clientId===client.id);if(!o)return'';const ppl=st.crmContacts.filter(c=>c.orgId===o.id&&c.id!==proj.contactId);if(!ppl.length)return'';return ' · '+ppl.map(c=>`<a href="javascript:void(0)" onclick="crmOpenContact('${jsq(c.id)}')" style="color:var(--dkgrey);text-decoration:underline;text-decoration-style:dotted" title="Open in the CRM">${escAttr(c.name)}</a>`).join(', ');})()}</div>`:''}
-        ${proj.startDate||proj.endDate?`<div style="font-size:11px;color:var(--grey);margin-top:5px;font-weight:500">${proj.startDate?`Start: ${fmtLong(new Date(proj.startDate))}  `:''} ${proj.endDate?`End: ${fmtLong(new Date(proj.endDate))}`:''}</div>`:''}
       </div>
     </div>
     <div style="display:flex;align-items:center;gap:10px">
@@ -4489,7 +4491,34 @@ function buildHealthDetail(projName){
       ${canEdit?`<button class="btn btn-sm" onclick="openProjEdit(${projIdx})">Edit</button>`:''}${admin?`<button class="btn btn-danger btn-sm" onclick="confirmRmProj(${projIdx})">Delete</button>`:''}
     </div>
   </div>
-  <div style="font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--dkgrey);margin-bottom:8px;font-weight:600">Billable</div>
+  <div class="hsec-tabs" style="display:inline-flex;gap:0;margin-bottom:20px;border:1px solid var(--mid);border-radius:8px;overflow:hidden;background:var(--wht)">
+    <button class="hsec-tab${healthSection!=='overview'?' hsec-on':''}" onclick="healthSec('finance')">Project Finances</button>
+    <button class="hsec-tab${healthSection==='overview'?' hsec-on':''}" onclick="healthSec('overview')">Project Details</button>
+  </div>`;
+  if(healthSection==='overview'){
+    const hasAbout=proj.description||proj.roleDesc||proj.address||proj.startDate||proj.endDate;
+    h+=`<div class="card" style="margin-bottom:14px"><div class="card-title">About</div>
+      ${proj.description?`<div style="font-size:12px;color:var(--blk);line-height:1.6;margin-bottom:8px;white-space:pre-wrap">${escAttr(proj.description)}</div>`:''}
+      ${proj.roleDesc?`<div style="font-size:11px;color:var(--dkgrey);line-height:1.6;margin-bottom:8px"><span style="font-size:9px;letter-spacing:.08em;text-transform:uppercase;font-weight:700;color:var(--grey)">Our role</span><br/>${escAttr(proj.roleDesc)}</div>`:''}
+      ${proj.address?`<div style="font-size:11px;color:var(--dkgrey);margin-bottom:8px"><span style="font-size:9px;letter-spacing:.08em;text-transform:uppercase;font-weight:700;color:var(--grey)">Site address</span><br/>${escAttr(proj.address)}</div>`:''}
+      ${proj.startDate||proj.endDate?`<div style="font-size:11px;color:var(--dkgrey)"><span style="font-size:9px;letter-spacing:.08em;text-transform:uppercase;font-weight:700;color:var(--grey)">Dates</span><br/>${proj.startDate?`Start ${fmtLong(new Date(proj.startDate))}`:''}${proj.startDate&&proj.endDate?' · ':''}${proj.endDate?`End ${fmtLong(new Date(proj.endDate))}`:''}</div>`:''}
+      ${!hasAbout?`<div style="font-size:12px;color:var(--grey);font-style:italic">Nothing recorded yet${canEdit?' — Edit adds the description, role and address':''}.</div>`:''}
+    </div>`;
+    h+=`${proj.projNotes&&canManage()?`<div class="card" style="margin-bottom:14px"><div class="card-title">Project Notes <span style="font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--grey);font-weight:600">admins & PMs</span></div><div style="font-size:12px;line-height:1.7;white-space:pre-wrap;color:var(--blk)">${escAttr(proj.projNotes)}</div></div>`:''}`;
+    if(canManage()){
+      const members=projectMembersOf(proj.name);
+      const addable=st.users.filter(x=>!x.deactivated&&x.role==='member'&&!members.includes(x.name));
+      h+=`<div class="card"><div class="card-title">Project team</div>
+        <div style="font-size:11px;color:var(--dkgrey);margin-bottom:10px">Members can only log time to projects they've been added to, and only see those projects on the Forecast. PMs and admins have access to every project automatically.</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+          ${members.length?members.map(m=>`<span class="badge" style="display:inline-flex;align-items:center;gap:6px;font-size:11px;padding:5px 10px">${escAttr(m)}<button title="Remove from project" onclick="projMemberRemove('${jsq(proj.name)}','${jsq(m)}')" style="background:none;border:none;cursor:pointer;color:var(--danger);font-weight:700;font-size:13px;padding:0;line-height:1">×</button></span>`).join(''):'<span style="font-size:12px;color:var(--grey);font-style:italic">No members added yet.</span>'}
+          ${addable.length?`<select style="font-size:11px" onchange="projMemberAdd('${jsq(proj.name)}',this.value);this.value=''"><option value="">+ Add member…</option>${addable.map(x=>`<option value="${escAttr(x.name)}">${escAttr(x.name)}</option>`).join('')}</select>`:''}
+        </div>
+      </div>`;
+    }
+    return h;
+  }
+  h+=`<div style="font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--dkgrey);margin-bottom:8px;font-weight:600">Billable</div>
   <div class="mgrid">
     <div class="metric"><div class="metric-label">Total fee${isTotalFee?' <span title="This project uses a single total fee rather than per-stage fees">(whole project)</span>':''}</div><div class="metric-value">${gbp(fee)}</div></div>
     <div class="metric"><div class="metric-label">Fee spent</div><div class="metric-value">${gbp(spent)}</div><div class="metric-sub">${pct!==null?`${pct}% of total fee`:''}</div></div>
@@ -4505,7 +4534,6 @@ function buildHealthDetail(projName){
     <div class="metric"><div class="metric-label">Confirmed invoices</div><div class="metric-value" style="color:${mm?'var(--warn)':'var(--ok)'}">${gbpInv(g.conf)}</div><div class="metric-sub">${mm?`<span style="color:var(--warn)">⚠ ≠ fee ${gbpInv(fee)}</span>`:'matches the fee'}${g.all>g.conf+0.005?` · ${gbpInv(g.all-g.conf)} unconfirmed excluded`:''}</div></div>
     <div class="metric"><div class="metric-label">Still to invoice</div><div class="metric-value">${gbpInv(g.conf-g.inv)}</div><div class="metric-sub">confirmed − invoiced</div></div>
   </div>`;})()}
-  ${proj.projNotes&&canManage()?`<div class="card" style="margin-bottom:14px"><div class="card-title">Project Notes</div><div style="font-size:12px;line-height:1.7;white-space:pre-wrap;color:var(--blk)">${escAttr(proj.projNotes)}</div></div>`:''}
   ${proj.feeNotes&&admin?`<div class="card" style="margin-bottom:14px"><div class="card-title">Fee Notes <span style="font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--grey);font-weight:600">admins only</span></div><div style="font-size:12px;line-height:1.7;white-space:pre-wrap;color:var(--blk)">${escAttr(proj.feeNotes)}</div></div>`:''}
   <div style="font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--dkgrey);margin-bottom:8px;margin-top:6px;font-weight:600">Cost</div>
   <div class="mgrid">
@@ -4563,18 +4591,6 @@ function buildHealthDetail(projName){
     }
   }
   h+=`</tbody></table></div>`;
-  // ── Project team — which members may log time to this project ────────────────
-  if(canManage()){
-    const members=projectMembersOf(proj.name);
-    const addable=st.users.filter(x=>!x.deactivated&&x.role==='member'&&!members.includes(x.name));
-    h+=`<div class="card"><div class="card-title">Project team</div>
-      <div style="font-size:11px;color:var(--dkgrey);margin-bottom:10px">Members can only log time to projects they've been added to, and only see those projects on the Forecast. PMs and admins have access to every project automatically.</div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-        ${members.length?members.map(m=>`<span class="badge" style="display:inline-flex;align-items:center;gap:6px;font-size:11px;padding:5px 10px">${escAttr(m)}<button title="Remove from project" onclick="projMemberRemove('${jsq(proj.name)}','${jsq(m)}')" style="background:none;border:none;cursor:pointer;color:var(--danger);font-weight:700;font-size:13px;padding:0;line-height:1">×</button></span>`).join(''):'<span style="font-size:12px;color:var(--grey);font-style:italic">No members added yet.</span>'}
-        ${addable.length?`<select style="font-size:11px" onchange="projMemberAdd('${jsq(proj.name)}',this.value);this.value=''"><option value="">+ Add member…</option>${addable.map(x=>`<option value="${escAttr(x.name)}">${escAttr(x.name)}</option>`).join('')}</select>`:''}
-      </div>
-    </div>`;
-  }
   return h;
 }
 
@@ -4967,6 +4983,15 @@ function buildProjEdit(i){
       <div style="flex:1;min-width:120px"><label>Contact</label><select id="ec-contact-${i}" onchange="projContactPick(this,'ec-client-${i}','ec-cohint-${i}')"><option value="">— none —</option>${st.crmContacts.slice().sort((a,b)=>a.name.localeCompare(b.name)).map(c=>{const o=c.orgId?st.crmOrgs.find(x=>x.id===c.orgId):null;return`<option value="${c.id}"${epv('ec-contact',p.contactId||'')===c.id?' selected':''}>${escAttr(c.name)}${o?' ('+escAttr(o.name)+')':''}</option>`;}).join('')}</select><div id="ec-cohint-${i}" style="font-size:10px;color:var(--dkgrey);margin-top:3px;min-height:12px"></div></div>
       <div style="flex:1;min-width:120px"><label>Start date</label><input id="ec-start-${i}" type="date" value="${escAttr(epv('ec-start',p.startDate||''))}"/></div>
       <div style="flex:1;min-width:120px"><label>End date</label><input id="ec-end-${i}" type="date" value="${escAttr(epv('ec-end',p.endDate||''))}"/></div>
+    </div>
+    <div class="row">
+      <div style="flex:1;min-width:200px"><label>Site address</label><input id="ec-address-${i}" value="${escAttr(epv('ec-address',p.address||''))}" placeholder="e.g. Lynn Road, Ely, CB6 1DN"/></div>
+    </div>
+    <div class="row">
+      <div style="flex:1;min-width:200px"><label>Project description</label><textarea id="ep-desc-${i}" rows="2" style="width:100%;font-size:12px;line-height:1.6;font-family:'Figtree',sans-serif;resize:vertical" placeholder="e.g. Integrated Retirement Community and GP surgery">${escAttr(epv('ep-desc',p.description||''))}</textarea></div>
+    </div>
+    <div class="row">
+      <div style="flex:1;min-width:200px"><label>Our role</label><textarea id="ep-roledesc-${i}" rows="2" style="width:100%;font-size:12px;line-height:1.6;font-family:'Figtree',sans-serif;resize:vertical" placeholder="e.g. Lead designer — preparation of the pre-application document">${escAttr(epv('ep-roledesc',p.roleDesc||''))}</textarea></div>
     </div>`);
 
   // ── Project notes (above everything fee-related) ─────────────────────────────
@@ -5083,6 +5108,12 @@ function incLines(){
 window.incSortBy=function(by){if(incSort.by===by)incSort.dir=-incSort.dir;else incSort={by,dir:1};render();}
 window.incSearch=function(el){const v=el.value,pos=el.selectionStart;incQ=v;render();const e2=document.getElementById('inc-search');if(e2){e2.focus();try{e2.setSelectionRange(pos,pos);}catch(_){}}}
 window.incTogDorm=function(){incHideDorm=!incHideDorm;render();}
+// Collapse all: every stage-fee project folds to its combined aggregate line
+// (total-fee projects are single lines already). incExpanded still toggles
+// individual projects open RELATIVE to the mode, so "collapse all, then open
+// the two I'm working on" behaves as expected; the set is cleared on toggle
+// so the switch always does what it says.
+window.incTogCollapseAll=function(){incAllCollapsed=!incAllCollapsed;incExpanded.clear();render();}
 // A block matches on project code, name, client, or any stage-line label.
 function incBlockMatch(b,q){
   if(!q)return true;
@@ -5105,8 +5136,16 @@ function incCellCls(c){if(!c.n)return'';
 // 100%-likelihood lines; Probable = confirmed installments weighted by their
 // line's likelihood; Max potential = everything at face value (unconfirmed
 // possibles included — they appear ONLY here).
+// Paid cash ALWAYS counts as Confirmed, whatever the line's likelihood —
+// likelihood weights the future, not the bank statement. Without this floor,
+// completed projects at dormant grey (correct for the forecast) had their
+// entire paid history discounted to zero and the Paid line rode above
+// Confirmed. Probable is likewise floored at Paid. Invariant everywhere:
+// paid <= conf <= prob <= max.
 function incMonthTotals(blocks,ym){let conf=0,prob=0,max=0,inv=0,paid=0;
-  for(const b of blocks)for(const l of b.lines){const c=incCell(l.list,ym);max+=c.all;prob+=c.conf*l.lik/100;if(l.lik===100)conf+=c.conf;inv+=c.inv;paid+=c.paid;}
+  for(const b of blocks)for(const l of b.lines){const c=incCell(l.list,ym);max+=c.all;inv+=c.inv;paid+=c.paid;
+    if(l.lik===100){conf+=c.conf;prob+=c.conf;}
+    else{conf+=c.paid;prob+=c.paid+Math.max(0,c.conf-c.paid)*l.lik/100;}}
   return{conf,prob,max,inv,paid};}
 function incQuarterInvoiced(blocks,y,q){let t=0;
   for(const b of blocks)for(const l of b.lines)for(const v of l.list){if(!v.invoiced)continue;const d=v.date||'';if(+d.slice(0,4)===y&&Math.ceil(+d.slice(5,7)/3)===q)t+=invAmt(v);}
@@ -5118,11 +5157,13 @@ function fyOf(ym){const[y,m]=ym.split('-').map(Number);return m>=FY_START_MONTH?
 function fyLabel(startY){return'FY '+startY+'/'+String(startY+1).slice(2);}
 function fyNowStart(){return fyOf(ymNow())+'-'+String(FY_START_MONTH).padStart(2,'0');}
 // Sum a line's installments over an inclusive YYYY-MM range (YtD / FY columns).
-function incRangeCell(list,from,to){let conf=0,all=0;
-  for(const v of list||[]){const ym=(v.date||'').slice(0,7);if(!ym||ym<from||ym>to)continue;const a=invAmt(v);all+=a;if(v.confirmed)conf+=a;}
-  return{conf,all};}
+function incRangeCell(list,from,to){let conf=0,all=0,paid=0;
+  for(const v of list||[]){const ym=(v.date||'').slice(0,7);if(!ym||ym<from||ym>to)continue;const a=invAmt(v);all+=a;if(v.confirmed)conf+=a;if(v.paid)paid+=a;}
+  return{conf,all,paid};}
 function incRangeTotals(blocks,from,to){let conf=0,prob=0,max=0;
-  for(const b of blocks)for(const l of b.lines){const c=incRangeCell(l.list,from,to);max+=c.all;prob+=c.conf*l.lik/100;if(l.lik===100)conf+=c.conf;}
+  for(const b of blocks)for(const l of b.lines){const c=incRangeCell(l.list,from,to);max+=c.all;
+    if(l.lik===100){conf+=c.conf;prob+=c.conf;}
+    else{conf+=c.paid;prob+=c.paid+Math.max(0,c.conf-c.paid)*l.lik/100;}}
   return{conf,prob,max};}
 // Deep link: open THIS project's Edit modal with the Invoicing card (and the
 // clicked stage's section) already expanded — the table and the modal edit the
@@ -5306,9 +5347,9 @@ function renderIncPopover(){
 window.incExportCSV=function(){
   if(!isAdmin())return;
   const months=incMonths(),blocks=incLines();
-  const rows=[['Month','Confirmed','Probable','Max potential','Invoiced','Paid'].map(crmCsv).join(',')];
+  const rows=[['Month','Max potential','Probable','Confirmed','Invoiced','Paid'].map(crmCsv).join(',')];
   for(const ym of months){const t=incMonthTotals(blocks,ym);
-    rows.push([ymLabel(ym),t.conf.toFixed(2),t.prob.toFixed(2),t.max.toFixed(2),t.inv.toFixed(2),t.paid.toFixed(2)].map(crmCsv).join(','));}
+    rows.push([ymLabel(ym),t.max.toFixed(2),t.prob.toFixed(2),t.conf.toFixed(2),t.inv.toFixed(2),t.paid.toFixed(2)].map(crmCsv).join(','));}
   const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([rows.join('\n')],{type:'text/csv'}));a.download='amn-income-forecast.csv';a.click();
 }
 function buildIncome(){
@@ -5341,6 +5382,7 @@ function buildIncome(){
     <span style="font-size:11px;color:var(--dkgrey)">${ymLabel(months[0])} – ${ymLabel(months[months.length-1])} · net of VAT</span>
     <input id="inc-search" type="text" placeholder="Search project / client / stage…" value="${escAttr(incQ)}" oninput="incSearch(this)" autocomplete="off" style="font-size:11px;width:200px;box-sizing:border-box"/>
     <button class="btn btn-sm" onclick="incTogDorm()" title="${incHideDorm?'Dormant projects are hidden — click to show them':'Hide projects whose every line is dormant (0%). Totals, chart and headline stats still cover everything.'}" style="${incHideDorm?'background:var(--blk);color:#fff;border-color:var(--blk)':''}">Hide dormant${incHideDorm?' ✓':''}</button>
+    <button class="btn btn-sm" onclick="incTogCollapseAll()" title="${incAllCollapsed?'Every project is folded to one combined line — click to restore the stage rows':'Fold every project to a single combined line per project. Click any project to expand just that one; totals are unaffected.'}" style="${incAllCollapsed?'background:var(--blk);color:#fff;border-color:var(--blk)':''}">Collapse all${incAllCollapsed?' ✓':''}</button>
     ${incFiltered?`<span style="font-size:10px;color:var(--warn);font-weight:600" title="The Confirmed / Probable / Max rows, the VAT actuals row, the chart and the stats above are always practice-wide — row filters never change them">showing ${shown.length} of ${blocks.length} — totals & chart cover all projects</span>`:''}
     <span style="font-size:10px;color:var(--grey);margin-left:auto;display:flex;align-items:center;gap:11px;flex-wrap:wrap">
       ${PROJ_TEMPS.map(t=>`<span style="display:inline-flex;align-items:center;gap:4px" title="${escAttr(t.label)}"><span class="temp-dot" style="width:12px;height:12px;background:${t.c};display:inline-block"></span>${likShort(LIK_BY_COLOR[t.c])}</span>`).join('')}
@@ -5366,7 +5408,7 @@ function buildIncome(){
       <tr><th class="sortable" style="min-width:56px" onclick="incSortBy('code')" title="Sort by project number">#${incSort.by==='code'?(incSort.dir>0?' ▲':' ▼'):''}</th><th class="sortable" style="min-width:140px" onclick="incSortBy('name')" title="Sort by project name">Project${incSort.by==='name'?(incSort.dir>0?' ▲':' ▼'):''}</th><th class="sortable" style="min-width:95px" onclick="incSortBy('client')" title="Sort by client">Client${incSort.by==='client'?(incSort.dir>0?' ▲':' ▼'):''}</th><th style="min-width:105px">Stage</th><th class="sortable" style="min-width:34px;text-align:center" onclick="incSortBy('lik')" title="Likelihood — sort by probability (a project's most likely line)">%${incSort.by==='lik'?(incSort.dir>0?' ▲':' ▼'):''}</th>${months.map((ym,mi)=>`<th class="${ym===now?'inc-nowcol':''}${mDiv(ym)}${mi===0?' inc-mfirst':''}" style="text-align:right;min-width:66px">${ymLabel(ym)}</th>`).join('')}<th class="inc-totcol" style="text-align:right" title="This financial year to date (${fyLab}, from ${ymLabel(fyStart)} to ${ymLabel(now)} inclusive)">YtD</th><th class="inc-totcol2" style="text-align:right" title="The whole financial year (${ymLabel(fyStart)} – ${ymLabel(fyEnd)})">${fyLab}</th></tr>
     </thead><tbody>`;
   for(const b of shown){
-    const defaultOpen=b.total||b.n>0;
+    const defaultOpen=incAllCollapsed?false:(b.total||b.n>0);
     const collapsed=!b.total&&(incExpanded.has(b.p.name)?defaultOpen:!defaultOpen);
     if(collapsed&&b.n===0){
       h+=`<tr class="inc-collapsed inc-blk" onclick="incTogProj('${jsq(b.p.name)}')" title="Expand to add installments">
@@ -5416,9 +5458,10 @@ function buildIncome(){
       // probable value (max × likelihood) so both are visible per stage, as on
       // the spreadsheet. At 100% they're identical, so no second row.
       if(l.lik<100){
-        const pMain=incRangeCell(l.list,fyStart,now).conf*l.lik/100,pFy=incRangeCell(l.list,fyStart,fyEnd).conf*l.lik/100;
-        h+=`<tr class="inc-prob"><td colspan="2" style="text-align:right">↳ probable · ${likShort(l.lik)}</td>${months.map((ym,mi)=>{const c=incCell(l.list,ym);const pv=c.conf*l.lik/100;
-          return `<td style="text-align:right" class="${ym===now?'inc-nowcol':''}${mDiv(ym)}${mi===0?' inc-mfirst':''}" title="Confirmed installments × ${likShort(l.lik)}">${pv>0.005?gbpInv(pv):'<span class="inc-zero">—</span>'}</td>`;}).join('')}<td class="inc-totcol" style="text-align:right">${pMain>0.005?gbpInv(pMain):'<span class="inc-zero">—</span>'}</td><td class="inc-totcol2" style="text-align:right">${pFy>0.005?gbpInv(pFy):'<span class="inc-zero">—</span>'}</td></tr>`;
+        const pFloor=c=>c.paid+Math.max(0,c.conf-c.paid)*l.lik/100;
+        const pMain=pFloor(incRangeCell(l.list,fyStart,now)),pFy=pFloor(incRangeCell(l.list,fyStart,fyEnd));
+        h+=`<tr class="inc-prob"><td colspan="2" style="text-align:right">↳ probable · ${likShort(l.lik)}</td>${months.map((ym,mi)=>{const c=incCell(l.list,ym);const pv=pFloor(c);
+          return `<td style="text-align:right" class="${ym===now?'inc-nowcol':''}${mDiv(ym)}${mi===0?' inc-mfirst':''}" title="Paid in full + remaining confirmed × ${likShort(l.lik)} — received cash is never discounted">${pv>0.005?gbpInv(pv):'<span class="inc-zero">—</span>'}</td>`;}).join('')}<td class="inc-totcol" style="text-align:right">${pMain>0.005?gbpInv(pMain):'<span class="inc-zero">—</span>'}</td><td class="inc-totcol2" style="text-align:right">${pFy>0.005?gbpInv(pFy):'<span class="inc-zero">—</span>'}</td></tr>`;
       }
     });
   }
@@ -5434,15 +5477,15 @@ function buildIncome(){
   const NCOLS=5+months.length; // label + month columns; the totals panel sits beyond
   h+=`<tr class="inc-chart-tog"><td colspan="${NCOLS}"><span class="inc-chart-btn" onclick="incTogChart()" title="${incChartOpen?'Hide the monthly totals chart':'Show the monthly totals chart — points sit directly beneath their month columns'}">${incChartOpen?'▾ Hide chart':'▸ Chart — monthly totals'}</span></td><td class="inc-tothead" colspan="2"></td></tr>`;
   if(incChartOpen)h+=`<tr class="inc-chart-row"><td colspan="${NCOLS}" style="padding:0"><div id="inc-chart-wrap">${hasData?'':'<div style="padding:12px 14px;font-size:11px;color:var(--grey)">The chart appears once installments are entered.</div>'}</div></td><td class="inc-tothead" colspan="2"></td></tr>`;
-  const totRow=(label,key,title)=>`<tr class="inc-tot${key==='conf'?' inc-tot-first':''}"><td colspan="5" class="inc-lab"><span class="inc-def" title="${escAttr(title)}">${label}</span></td>${tots.map((t,mi)=>`<td style="text-align:right" class="${months[mi]===now?'inc-nowcol':''}${mDiv(months[mi])}${mi===0?' inc-mfirst':''}">${t[key]>0.005?gbpInv(t[key]):'<span class="inc-zero">—</span>'}</td>`).join('')}<td class="inc-totcol" style="text-align:right">${rY[key]>0.005?gbpInv(rY[key]):'<span class="inc-zero">—</span>'}</td><td class="inc-totcol2" style="text-align:right">${rF[key]>0.005?gbpInv(rF[key]):'<span class="inc-zero">—</span>'}</td></tr>`;
-  h+=totRow('Confirmed','conf','Confirmed installments on 100%-likelihood lines only — work that is definitely happening, at the figures agreed');
-  h+=totRow('Probable','prob','Every confirmed installment weighted by its line\u2019s likelihood — the realistic expectation across the whole book (meaningful in aggregate, not per project)');
+  const totRow=(label,key,title)=>`<tr class="inc-tot${key==='max'?' inc-tot-first':''}"><td colspan="5" class="inc-lab"><span class="inc-def" title="${escAttr(title)}">${label}</span></td>${tots.map((t,mi)=>`<td style="text-align:right" class="${months[mi]===now?'inc-nowcol':''}${mDiv(months[mi])}${mi===0?' inc-mfirst':''}">${t[key]>0.005?gbpInv(t[key]):'<span class="inc-zero">—</span>'}</td>`).join('')}<td class="inc-totcol" style="text-align:right">${rY[key]>0.005?gbpInv(rY[key]):'<span class="inc-zero">—</span>'}</td><td class="inc-totcol2" style="text-align:right">${rF[key]>0.005?gbpInv(rF[key]):'<span class="inc-zero">—</span>'}</td></tr>`;
   h+=totRow('Max potential','max','Every installment at face value, including unconfirmed possibles — the ceiling if everything lands');
+  h+=totRow('Probable','prob','Confirmed installments weighted by their line\u2019s likelihood, never below Paid — the realistic expectation across the whole book (meaningful in aggregate, not per project)');
+  h+=totRow('Confirmed','conf','Confirmed installments on 100%-likelihood lines, plus ALL money already received — cash in the bank counts as confirmed whatever the line\u2019s likelihood');
   h+=`<tr class="inc-vat-gap"><td colspan="${NCOLS}"></td><td class="inc-tothead" colspan="2"></td></tr>`;
   h+=`<tr class="inc-vatrow"><td colspan="5" class="inc-lab"><span class="inc-def" title="All invoiced installments dated in the quarter — whole quarter, not just the visible months. A record of billed actuals per VAT quarter, NOT one of the monthly scenarios above.">Invoiced / VAT qtr<span class="inc-vat-sub">billed actuals per quarter — not a scenario</span></span></td>${qGroups.map((g,gi)=>{const t=incQuarterInvoiced(blocks,g.y,g.q);return `<td colspan="${g.n}" style="text-align:center" class="inc-qdiv${gi===0?' inc-mfirst':''}">${t>0.005?gbpInv(t):'<span class="inc-zero">—</span>'}</td>`;}).join('')}<td class="inc-tothead" colspan="2"></td></tr>`;
   h+=`</tbody></table></div>`;
   if(incChartOpen)h+=`<div style="display:flex;gap:16px;align-items:center;font-size:10px;color:var(--dkgrey);padding:8px 14px;border-top:1px solid var(--mid);flex-wrap:wrap">${hasData
-    ?INC_SERIES.map(sr=>`<span style="display:inline-flex;align-items:center;gap:5px"><span style="width:16px;height:0;border-top:2px ${sr.dash?'dashed':'solid'} ${sr.color};display:inline-block"></span>${sr.label}</span>`).join('')+`<span style="margin-left:auto;color:var(--grey)">chart points sit beneath their month columns · orange = this month · dark verticals continue the table's FY rules</span>`
+    ?['max','prob','conf','paid'].map(k=>INC_SERIES.find(sr=>sr.key===k)).map(sr=>`<span style="display:inline-flex;align-items:center;gap:5px"><span style="width:16px;height:0;border-top:2px ${sr.dash?'dashed':'solid'} ${sr.color};display:inline-block"></span>${sr.label}</span>`).join('')+`<span style="margin-left:auto;color:var(--grey)">chart points sit beneath their month columns · orange = this month · dark verticals continue the table's FY rules</span>`
     :'<span style="color:var(--grey)">The chart appears once installments are entered.</span>'}</div>`;
   h+=`</div>`;
   return h;
@@ -6411,8 +6454,9 @@ window.incPacketChanged=function(input){
   reader.onload=()=>{
     try{
       const pk=JSON.parse(reader.result);
-      if(!pk||pk.packet!=='amn-income-forecast-import')throw new Error('not an income forecast packet');
-      if(!Array.isArray(pk.invoices)||!pk.invoices.length)throw new Error('no installments in the packet');
+      if(!pk||(pk.packet!=='amn-income-forecast-import'&&pk.packet!=='amn-project-details-import'))throw new Error('not a recognised import packet');
+      if(pk.packet==='amn-income-forecast-import'&&(!Array.isArray(pk.invoices)||!pk.invoices.length))throw new Error('no installments in the packet');
+      if(pk.packet==='amn-project-details-import'&&(!Array.isArray(pk.details)||!pk.details.length))throw new Error('no project details in the packet');
       incPacket={name:f.name,data:pk};incResult=null;render();
     }catch(err){undoToast('That file could not be read: '+err.message);incPacket=null;render();}
   };
@@ -6444,8 +6488,46 @@ function incDryRun(pk){
   return out;
 }
 
+// The packet's 'comments' entries write into projNotes (the comments field was
+// retired in Round 33 — one notes field too many). Only-if-empty still holds.
+const INC_DETAIL_FIELDS=[['address','Site address'],['description','Description'],['roleDesc','Our role'],['comments','Project notes']];
+function incDetailTarget(k){return k==='comments'?'projNotes':k;}
+// Details dry run — a field is written only when the packet has a value AND the
+// project's field is currently empty. Existing text is never overwritten.
+function incDetailsDry(pk){
+  const out={write:[],skip:[],missing:[]};
+  for(const e of pk.details||[]){
+    const p=incProjByCode(e.code,e.name);
+    if(!p){out.missing.push(e);continue;}
+    const flds=INC_DETAIL_FIELDS.filter(([k])=>String(e[k]||'').trim()&&!String(p[incDetailTarget(k)]||'').trim()).map(([k])=>k);
+    const kept=INC_DETAIL_FIELDS.filter(([k])=>String(e[k]||'').trim()&&String(p[incDetailTarget(k)]||'').trim()).map(([k])=>k);
+    if(flds.length)out.write.push({p,e,flds,kept});
+    else out.skip.push({p,e,kept});
+  }
+  return out;
+}
+function incDetailsPreview(){
+  const pk=incPacket.data,d=incDetailsDry(pk);
+  const lab=k=>(INC_DETAIL_FIELDS.find(x=>x[0]===k)||[k,k])[1];
+  let h=`<div class="imp-step" style="margin-top:12px">
+    <div style="font-weight:700;margin-bottom:8px">Preview — ${escAttr(incPacket.name)}</div>
+    <div class="row" style="gap:18px;flex-wrap:wrap;font-size:12px;margin-bottom:10px">
+      <div><b>${d.write.length}</b> project${d.write.length===1?'':'s'} to update</div>
+      ${d.skip.length?`<div style="color:var(--dkgrey)">${d.skip.length} with nothing to add</div>`:''}
+      ${d.missing.length?`<div style="color:var(--dkgrey)">${d.missing.length} not in the app — skipped</div>`:''}
+    </div>
+    <p style="font-size:11px;color:var(--dkgrey);margin:0 0 8px;line-height:1.5">Only empty fields are filled — existing text is never overwritten.</p>`;
+  if(d.write.length){
+    h+=`<div class="tbl-freeze" style="max-height:280px"><table class="rtable"><thead><tr><th>Project</th><th>Fields written</th></tr></thead><tbody>`;
+    for(const w of d.write)h+=`<tr><td>${escAttr(w.p.code||'')} ${escAttr(w.p.name)}</td><td>${w.flds.map(lab).join(', ')}${w.kept.length?` <span style="color:var(--grey)">(${w.kept.map(lab).join(', ')} already filled — kept)</span>`:''}</td></tr>`;
+  h+=`</tbody></table></div>`;}
+  if(d.missing.length)h+=`<div class="notice" style="margin-top:8px">Not in the app: ${escAttr(d.missing.map(m=>`${m.code} ${m.name||''}`.trim()).join(', '))}</div>`;
+  h+=`<div class="row" style="margin-top:12px">${d.write.length?`<button class="btn btn-primary btn-sm" onclick="doIncImport()">Apply — fill ${d.write.length} project${d.write.length===1?'':'s'}</button>`:`<div style="font-size:12px;color:var(--dkgrey)">Nothing left to import from this packet.</div>`}</div></div>`;
+  return h;
+}
 function incPreview(){
   if(!incPacket)return '';
+  if(incPacket.data.packet==='amn-project-details-import')return incDetailsPreview();
   const pk=incPacket.data,d=incDryRun(pk);
   const tot=v=>pk.invoices.filter(x=>!incCellsDone()[x.cell]).reduce((s,x)=>s+(v(x)?x.amount:0),0);
   let h=`<div class="imp-step" style="margin-top:12px">
@@ -6486,6 +6568,13 @@ function incPreview(){
 
 window.doIncImport=function(){
   if(!incPacket)return;
+  if(incPacket.data.packet==='amn-project-details-import'){
+    const d=incDetailsDry(incPacket.data);
+    openConfirmModal('Apply the project details import',
+      `Fill the empty address / description / role / project-notes fields on ${d.write.length} project${d.write.length===1?'':'s'}? Existing text is never overwritten. This can be undone with Ctrl+Z in this session only.`,
+      'import','doIncImportConfirmed',[]);
+    return;
+  }
   const d=incDryRun(incPacket.data);
   openConfirmModal('Apply the income forecast import',
     `Write ${d.apply} installments onto ${Object.keys(d.byProj).length} projects, along with the fees, likelihoods and corrections listed in the preview? Take a backup first if you have not already. This can be undone with Ctrl+Z in this session only.`,
@@ -6494,6 +6583,16 @@ window.doIncImport=function(){
 
 window.doIncImportConfirmed=function(){
   if(!incPacket)return;
+  if(incPacket.data.packet==='amn-project-details-import'){
+    const d=incDetailsDry(incPacket.data),log=[];
+    for(const w of d.write){for(const k of w.flds)w.p[incDetailTarget(k)]=String(w.e[k]).trim();
+      log.push(`${w.p.name}: ${w.flds.join(', ')}`);}
+    if(!st.meta)st.meta={};
+    st.meta.projDetailsImportAt=new Date().toISOString();st.meta.projDetailsImportBy=st.currentUser||'';
+    incResult={added:0,fees:0,skipped:d.skip.length+d.missing.length,log,details:d.write.length};
+    incPacket=null;save();render();
+    return;
+  }
   const pk=incPacket.data,done=incCellsDone(),log=[];
   let nInv=0,nFee=0,nSkip=0;
   // 1. project code corrections
@@ -6513,7 +6612,7 @@ window.doIncImportConfirmed=function(){
     const cl=st.clients.find(x=>incNorm(x.company)===incNorm(np.client));
     const p={code:np.code,name:np.name,clientId:cl?cl.id:null,clientName:cl?cl.company:(np.client||null),
       contactId:null,startDate:null,endDate:null,phases:[],feeMode:np.feeMode==='total'?'total':'stage',
-      totalFee:0,rateOverrides:{},feeNotes:'',projNotes:'',invoices:[]};
+      totalFee:0,rateOverrides:{},feeNotes:'',projNotes:'',address:'',description:'',roleDesc:'',invoices:[]};
     ensureRibaStages(p);
     const ph=incPhase(p,np.activate);if(ph)ph.active=true;
     st.projects.push(p);log.push(`Project created: ${np.code} ${np.name}`);
@@ -6643,9 +6742,9 @@ function buildImport(){
 `;
   h+=`<div class="card">
     <div class="card-title">Income forecast import (one-time)</div>
-    <p style="font-size:11px;color:var(--dkgrey);line-height:1.6;margin:0 0 10px">Loads the practice cashflow spreadsheet's income forecast into the app as invoices — the fee schedule for every project, with paid, invoiced and planned installments, stage fees and likelihoods. The packet is prepared offline and checked here before anything is written. <b>Take a backup first.</b> It is safe to load the same packet twice: every installment is stamped with the row it came from, and ones already imported are skipped.</p>
+    <p style="font-size:11px;color:var(--dkgrey);line-height:1.6;margin:0 0 10px">Loads a prepared import packet — either the cashflow spreadsheet's income forecast (invoices, stage fees and likelihoods) or the project list's details (site address, description, role, project notes). Everything is previewed here before anything is written. <b>Take a backup first.</b> Both packets are safe to load twice: installments already imported are skipped, and details are only ever written into empty fields.</p>
     ${st.meta&&st.meta.incImportAt?`<div class="notice" style="margin:0 0 10px">A packet was already imported on ${escAttr(String(st.meta.incImportAt).slice(0,10))}${st.meta.incImportBy?' by '+escAttr(st.meta.incImportBy):''}. Loading another only adds installments that are not in the app yet.</div>`:''}
-    ${incResult?`<div class="notice" style="margin:0 0 10px"><b>Import complete.</b> ${incResult.added} installment${incResult.added===1?'':'s'} added${incResult.fees?`, ${incResult.fees} stage fee${incResult.fees===1?'':'s'} written`:''}${incResult.skipped?`, ${incResult.skipped} skipped`:''}. ${incResult.log.length?`<details style="margin-top:6px"><summary style="cursor:pointer">What changed (${incResult.log.length})</summary><ul style="margin:6px 0 0 16px;line-height:1.7">${incResult.log.map(l=>`<li>${escAttr(l)}</li>`).join('')}</ul></details>`:''}</div>`:''}
+    ${incResult?`<div class="notice" style="margin:0 0 10px"><b>Import complete.</b> ${incResult.details!==undefined?`${incResult.details} project${incResult.details===1?'':'s'} updated`:''}${incResult.details===undefined?`${incResult.added} installment${incResult.added===1?'':'s'} added`:''}${incResult.fees?`, ${incResult.fees} stage fee${incResult.fees===1?'':'s'} written`:''}${incResult.skipped?`, ${incResult.skipped} skipped`:''}. ${incResult.log.length?`<details style="margin-top:6px"><summary style="cursor:pointer">What changed (${incResult.log.length})</summary><ul style="margin:6px 0 0 16px;line-height:1.7">${incResult.log.map(l=>`<li>${escAttr(l)}</li>`).join('')}</ul></details>`:''}</div>`:''}
     <div class="row" style="align-items:flex-end">
       <div style="flex:1;min-width:220px"><label>Income forecast packet (.json)</label><input type="file" accept=".json,application/json" onchange="incPacketChanged(this)"/></div>
     </div>
@@ -7048,7 +7147,8 @@ function buildReports(){
 window.tab=t=>{st._tab=t;viewingUser=null;healthProj=null;editingProj=null;openActionMenu=null;expandedStage=null;editingSubmitted=new Set();activeNoteCell=null;st._projAddOpen=false;save();render();}
 window.cw=d=>{wkOff+=d;activeNoteCell=null;render();}
 window.goThisWeek=()=>{wkOff=0;activeNoteCell=null;render();}
-window.openH=name=>{healthProj=name;openActionMenu=null;expandedStage=null;render();}
+window.openH=name=>{healthProj=name;healthSection='finance';openActionMenu=null;expandedStage=null;render();}
+window.healthSec=function(sec){healthSection=sec==='overview'?'overview':'finance';render();}
 window.closeH=()=>{healthProj=null;expandedStage=null;render();}
 window.togStage=function(name){expandedStage=expandedStage===name?null:name;render();}
 window.editSubmitted=function(person,wk){editingSubmitted.add(`${person}||${wk}`);render();}
@@ -7267,7 +7367,7 @@ window.saveProjEdit=function(i){
   // rendered into the draft, then read draft-first with the stored value as fallback.
   epHarvest(i);const p0=st.projects[i];
   const gv=(id,fb)=>projEditDraft[id]!==undefined?projEditDraft[id]:(fb??'');
-  const code=String(gv('ec-code',p0.code)).trim(),name=String(gv('ec-name',p0.name)).trim(),clientId=resolveProjClientId(gv('ec-client',p0.clientId||'')),startDate=gv('ec-start',p0.startDate||'')||null,endDate=gv('ec-end',p0.endDate||'')||null;if(!name)return;const oldName=st.projects[i].name;if(name!==oldName&&st.projects.some(p=>p.name===name)){undoToast('A project with that name already exists.');return;}const client=st.clients.find(c=>c.id===clientId);st.projects[i].code=code;st.projects[i].name=name;st.projects[i].clientId=clientId;const contactId2=gv('ec-contact',p0.contactId||'')||null;st.projects[i].clientName=client?.company||null;st.projects[i].contactId=contactId2;st.projects[i].startDate=startDate;st.projects[i].endDate=endDate;st.projects[i].feeNotes=String(gv('ep-notes',p0.feeNotes||''));st.projects[i].projNotes=String(gv('ep-pnotes',p0.projNotes||''));
+  const code=String(gv('ec-code',p0.code)).trim(),name=String(gv('ec-name',p0.name)).trim(),clientId=resolveProjClientId(gv('ec-client',p0.clientId||'')),startDate=gv('ec-start',p0.startDate||'')||null,endDate=gv('ec-end',p0.endDate||'')||null;if(!name)return;const oldName=st.projects[i].name;if(name!==oldName&&st.projects.some(p=>p.name===name)){undoToast('A project with that name already exists.');return;}const client=st.clients.find(c=>c.id===clientId);st.projects[i].code=code;st.projects[i].name=name;st.projects[i].clientId=clientId;const contactId2=gv('ec-contact',p0.contactId||'')||null;st.projects[i].clientName=client?.company||null;st.projects[i].contactId=contactId2;st.projects[i].startDate=startDate;st.projects[i].endDate=endDate;st.projects[i].feeNotes=String(gv('ep-notes',p0.feeNotes||''));st.projects[i].projNotes=String(gv('ep-pnotes',p0.projNotes||''));st.projects[i].address=String(gv('ec-address',p0.address||''));st.projects[i].description=String(gv('ep-desc',p0.description||''));st.projects[i].roleDesc=String(gv('ep-roledesc',p0.roleDesc||''));
   // If project name changed, migrate every store keyed by project name
   if(oldName!==name)renameProjectEverywhere(oldName,name);
   editingProj=null;projEditDraft={};save();render();}
@@ -7444,7 +7544,7 @@ window.projContactPick=function(sel,clientSelId,hintId){
   const o=crmOrg(ct.orgId);
   if(hint&&o)hint.textContent=had?`Company switched to ${o.name} — ${ct.name}'s company.`:`Company set to ${o.name}.`;
 }
-window.addProj=function(){const code=document.getElementById('np-code').value.trim(),name=document.getElementById('np-name').value.trim(),clientId=resolveProjClientId(document.getElementById('np-client').value),startDate=document.getElementById('np-start').value||null,endDate=document.getElementById('np-end').value||null;if(!name)return;if(st.projects.find(p=>p.name===name))return;const client=st.clients.find(c=>c.id===clientId);const phases=[...document.querySelectorAll('#np-phases .phase-tag')].map(t=>({name:t.dataset.name,fee:parseFloat(t.dataset.fee)||null,active:true}));const fmEl=document.getElementById('np-feemode');const feeMode=fmEl&&fmEl.value==='total'?'total':'stage';const tfEl=document.getElementById('np-totalfee');const totalFee=feeMode==='total'?(parseFloat(tfEl&&tfEl.value)||0):0;const contactId=document.getElementById('np-contact')?.value||null;const np={code,name,clientId,clientName:client?.company||null,contactId,startDate,endDate,phases,feeMode,totalFee,rateOverrides:{},feeNotes:'',projNotes:''};ensureRibaStages(np);st.projects.push(np);st._projAddOpen=false;save();render();}
+window.addProj=function(){const code=document.getElementById('np-code').value.trim(),name=document.getElementById('np-name').value.trim(),clientId=resolveProjClientId(document.getElementById('np-client').value),startDate=document.getElementById('np-start').value||null,endDate=document.getElementById('np-end').value||null;if(!name)return;if(st.projects.find(p=>p.name===name))return;const client=st.clients.find(c=>c.id===clientId);const phases=[...document.querySelectorAll('#np-phases .phase-tag')].map(t=>({name:t.dataset.name,fee:parseFloat(t.dataset.fee)||null,active:true}));const fmEl=document.getElementById('np-feemode');const feeMode=fmEl&&fmEl.value==='total'?'total':'stage';const tfEl=document.getElementById('np-totalfee');const totalFee=feeMode==='total'?(parseFloat(tfEl&&tfEl.value)||0):0;const contactId=document.getElementById('np-contact')?.value||null;const np={code,name,clientId,clientName:client?.company||null,contactId,startDate,endDate,phases,feeMode,totalFee,rateOverrides:{},feeNotes:'',projNotes:'',address:'',description:'',roleDesc:''};ensureRibaStages(np);st.projects.push(np);st._projAddOpen=false;save();render();}
 window.setFeeMode=function(i,mode){st.projects[i].feeMode=mode;save();render();}
 window.updTotalFee=function(i,v){st.projects[i].totalFee=parseFloat(v)||0;save();render();}
 window.addPhToP=function(i){const ph=document.getElementById(`ep-ph-${i}`).value.trim(),fee=parseFloat(document.getElementById(`ep-pf-${i}`).value)||null;if(!ph)return;if(!st.projects[i].phases)st.projects[i].phases=[];if(!st.projects[i].phases.find(p=>p.name===ph))st.projects[i].phases.push({name:ph,fee,active:true});save();render();}
@@ -8119,7 +8219,7 @@ const HELP_TEXT={
   income:{title:'How the income forecast works',body:`
     <p style="margin:0 0 8px"><b>The practice's fee pipeline by month</b> — the portal's version of the cashflow spreadsheet's Income Forecast tab, driven by the same invoice installments as each project's Invoicing card. Every non-archived project with an active stage appears; amounts are net of VAT.</p>
     <p style="margin:0 0 8px"><b>Cells.</b> A cell is that stage's installments dated in that month — click it to add or edit them (the project modal's Invoicing card edits the same records). Colours match the spreadsheet: <b>cyan</b> = invoiced, awaiting payment; <b>salmon</b> = paid; plain = planned; <i>grey italic</i> = unconfirmed possibles, counted only in Max potential. A small dot marks a month mixing states.</p>
-    <p style="margin:0 0 8px"><b>Likelihood.</b> The figures you enter are always the <b>max potential</b> — the familiar numbers from the fee proposal. Each stage line inherits the project's likelihood colour, or set its own via its dot; a line below 100% shows a second <i>probable</i> row (max × likelihood) so both are visible per stage. <b>Confirmed</b> counts 100% lines only; <b>Probable</b> weights every line by its likelihood; <b>Max potential</b> is everything at face value.</p>
+    <p style="margin:0 0 8px"><b>Likelihood.</b> The figures you enter are always the <b>max potential</b> — the familiar numbers from the fee proposal. Each stage line inherits the project's likelihood colour, or set its own via its dot; a line below 100% shows a second <i>probable</i> row (max × likelihood) so both are visible per stage. <b>Confirmed</b> counts 100% lines plus everything already paid — received cash is never discounted, whatever the line's likelihood; <b>Probable</b> weights the rest by likelihood and is never below Paid; <b>Max potential</b> is everything at face value.</p>
     <p style="margin:0 0 8px"><b>Confirmed tick vs likelihood — two different questions, no conflict.</b> The per-installment <b>Confirmed</b> tick asks "is this installment a real part of the plan?" — untick it for speculative extras, which then count ONLY in Max potential whatever the line's likelihood. The line's <b>likelihood</b> asks "is this work going to happen at all?" and weights the confirmed installments. They multiply: a confirmed installment on a 40% line means "the drawdown schedule is agreed, the appointment is 40% likely" — it shows in Probable at 40% and Max at face value, and joins the Confirmed total only once the line reaches 100%.</p>
     <p style="margin:0 0 8px"><b>Paid.</b> Tick Paid when the money lands — the received date is recorded, the cell turns salmon, and the practice-wide <b>Outstanding</b> figure (your debtors) updates.</p>
     <p style="margin:0 0 8px"><b>Fill, move and sort.</b> Drag a filled cell along its row to repeat its installments into the covered months (they land as planned and never overwrite existing months). To <b>slip a run of planned income</b>, shift+click the first and last cells of the range (they highlight), then drag the selection left or right — every planned installment in it moves by that many months; issued and paid invoices are records and stay put. Click the #, Project, Client or % headers to sort. Add a short note to any installment — a corner mark shows on the cell and the note appears in its tooltip. The <b>%</b> column is the likelihood dot (dashed border = inherited from the project colour) — click it to change; the ↗ beside a project name or in a cell's popover jumps straight to that project's Invoicing card.</p>
