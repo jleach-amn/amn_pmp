@@ -618,8 +618,8 @@ const STORE_KEY='amn_tracker_v1';
 // The newest build anyone opens records its number in the shared state
 // (st.meta.appBuild); a copy whose APP_BUILD is lower shows a "reopen from
 // SharePoint" banner. APP_VERSION_LABEL is the human-facing date, display only.
-const APP_BUILD=27;
-const APP_VERSION_LABEL='17 Aug 2026';
+const APP_BUILD=28;
+const APP_VERSION_LABEL='19 Aug 2026';
 
 let _sbSession=null;
 let _sbSaveTimer=null;
@@ -6386,6 +6386,214 @@ window.doBackupJSON=function(){
   const a=document.createElement('a');a.href=URL.createObjectURL(blob);
   a.download=`amn-backup-${isoDate(new Date())}.json`;a.click();
 }
+// ── Income forecast import (one-time, Round 30) ───────────────────────────────
+// Loads a packet built offline from the practice cashflow workbook
+// (amn_Cash_Flow_2026.xlsm -> Income Forecast) and writes it onto projects as
+// invoices, stage fees and likelihoods. Declarative: the packet says what to do,
+// this walks it. Idempotent — every installment carries its source cell, and
+// st.meta.incCells records the ones already applied, so a re-run adds nothing.
+let incPacket=null, incResult=null;
+function incNorm(x){return String(x||'').replace(/\u2013/g,'-').trim().toLowerCase();}
+// Codes are NOT unique in the live data (A25063 sits on two projects), so every
+// lookup takes the name as a tie-break and refuses to guess when it cannot tell.
+function incProjByCode(code,name){const c=incNorm(code);
+  const hits=st.projects.filter(p=>incNorm(p.code)===c);
+  if(hits.length>1){if(!name)return null;
+    return hits.find(p=>incNorm(p.name)===incNorm(name))||null;}
+  return hits[0]||null;}
+function incPhase(p,name){if(!p)return null;const n=incNorm(name);return (p.phases||[]).find(ph=>incNorm(ph.name)===n)||null;}
+function incCellsDone(){if(!st.meta)st.meta={};if(!st.meta.incCells||typeof st.meta.incCells!=='object')st.meta.incCells={};return st.meta.incCells;}
+function incGBP(n){return gbpInv(Number(n)||0);}
+
+window.incPacketChanged=function(input){
+  const f=input.files&&input.files[0];if(!f){incPacket=null;render();return;}
+  const reader=new FileReader();
+  reader.onload=()=>{
+    try{
+      const pk=JSON.parse(reader.result);
+      if(!pk||pk.packet!=='amn-income-forecast-import')throw new Error('not an income forecast packet');
+      if(!Array.isArray(pk.invoices)||!pk.invoices.length)throw new Error('no installments in the packet');
+      incPacket={name:f.name,data:pk};incResult=null;render();
+    }catch(err){undoToast('That file could not be read: '+err.message);incPacket=null;render();}
+  };
+  reader.readAsText(f);
+}
+
+// Dry run — returns the same shape the apply produces, without touching state.
+function incDryRun(pk){
+  const done=incCellsDone(),out={apply:0,already:0,missing:[],warn:[],byProj:{}};
+  const known=new Set(st.projects.map(p=>incNorm(p.code)));
+  for(const np of pk.newProjects||[])known.add(incNorm(np.code));
+  for(const fx of pk.codeFixes||[])known.add(incNorm(fx.to));
+  for(const v of pk.invoices){
+    if(done[v.cell]){out.already++;continue;}
+    if(!known.has(incNorm(v.code))){out.missing.push(v);continue;}
+    if(v.target==='stage'){const p=incProjByCode(v.code,v.project);
+      if(p&&!incPhase(p,v.stage)&&!(pk.customStages||[]).some(c=>incNorm(c.code)===incNorm(v.code)&&incNorm(c.stage)===incNorm(v.stage))){out.missing.push(v);continue;}}
+    out.apply++;
+    const k=v.project||v.code;
+    const b=out.byProj[k]||(out.byProj[k]={n:0,amt:0,paid:0,inv:0,plan:0});
+    b.n++;b.amt+=v.amount;
+    if(v.paid)b.paid+=v.amount;else if(v.invoiced)b.inv+=v.amount;else b.plan+=v.amount;
+  }
+  for(const fw of pk.feeWrites||[]){
+    const p=incProjByCode(fw.code,fw.project);if(!p)continue;
+    const ph=incPhase(p,fw.stage);
+    if(ph&&(parseFloat(ph.fee)||0)>0)out.warn.push(`${p.name} — ${fw.stage} already has a fee of ${incGBP(ph.fee)}; the packet's ${incGBP(fw.fee)} will NOT be written`);
+  }
+  return out;
+}
+
+function incPreview(){
+  if(!incPacket)return '';
+  const pk=incPacket.data,d=incDryRun(pk);
+  const tot=v=>pk.invoices.filter(x=>!incCellsDone()[x.cell]).reduce((s,x)=>s+(v(x)?x.amount:0),0);
+  let h=`<div class="imp-step" style="margin-top:12px">
+    <div style="font-weight:700;margin-bottom:8px">Preview — ${escAttr(incPacket.name)}</div>
+    <div class="row" style="gap:18px;flex-wrap:wrap;font-size:12px;margin-bottom:10px">
+      <div><b>${d.apply}</b> installments to add</div>
+      <div>Paid <b>${incGBP(tot(x=>x.paid))}</b></div>
+      <div>Invoiced <b>${incGBP(tot(x=>x.invoiced&&!x.paid))}</b></div>
+      <div>Planned <b>${incGBP(tot(x=>!x.invoiced))}</b></div>
+      ${d.already?`<div style="color:var(--dkgrey)">${d.already} already imported — skipped</div>`:''}
+    </div>`;
+  const sec=(label,rows)=>rows.length?`<div style="margin:8px 0"><b style="font-size:12px">${label}</b><ul style="margin:4px 0 0 16px;font-size:11px;line-height:1.7;color:var(--dkgrey)">${rows.map(r=>`<li>${r}</li>`).join('')}</ul></div>`:'';
+  h+=sec('Project code corrections',(pk.codeFixes||[]).map(f=>`${escAttr(f.project)}: ${escAttr(f.from)} → <b>${escAttr(f.to)}</b>`));
+  h+=sec('New clients',(pk.newClients||[]).map(c=>escAttr(c.company)));
+  h+=sec('New projects',(pk.newProjects||[]).map(p=>`${escAttr(p.code)} ${escAttr(p.name)} — ${escAttr(p.client)}`));
+  h+=sec('Fee mode changed to per-stage',(pk.convert||[]).map(c=>`${escAttr(c.project)} (${escAttr(c.code)}) — so each line keeps its own likelihood`));
+  h+=sec('New custom stages',(pk.customStages||[]).map(c=>`${escAttr(c.code)} — ${escAttr(c.stage)}`));
+  h+=sec('Stage fees written (empty stages only)',(pk.feeWrites||[]).map(f=>`${escAttr(f.project)} — ${escAttr(f.stage)}: ${incGBP(f.fee)}`));
+  h+=sec('Fee corrections (deliberate — these overwrite)',(pk.feeCorrections||[]).map(f=>`${escAttr(f.project)}${f.stage?' — '+escAttr(f.stage):''}: ${incGBP(f.from)} → <b>${incGBP(f.to)}</b> · ${escAttr(f.why)}`));
+  h+=sec('Likelihood set below 100%',(pk.likelihoods||[]).map(l=>`${escAttr(l.code)}${l.stage?' — '+escAttr(l.stage):''}: ${l.likelihood}%`));
+  h+=sec('Fee notes added',(pk.feeNotes||[]).map(n=>escAttr(n.project)));
+  h+=sec('Client expenses',(pk.expenses||[]).map(e=>`${escAttr(e.project)} — ${escAttr(e.desc)}: ${incGBP(e.amount)}`));
+  h+=sec('Housekeeping',(pk.cleanups||[]).map(c=>`${escAttr(c.code)} — ${escAttr(c.why||c.action)}`));
+  h+=sec('Left out of the packet',(pk.skipped||[]).map(k=>`${escAttr(k.project||k.line||'')} ${k.month?escAttr(k.month):''} ${k.amount?incGBP(k.amount):''} — ${escAttr(k.why)}`));
+  if(d.missing.length)h+=`<div class="notice" style="margin-top:8px">${d.missing.length} installment${d.missing.length>1?'s':''} reference a project that is not in the app and will be skipped: ${escAttr([...new Set(d.missing.map(m=>m.project||m.code))].join(', '))}</div>`;
+  if(d.warn.length)h+=sec('Fees left as they are',d.warn.map(escAttr));
+  const names=Object.keys(d.byProj).sort();
+  if(names.length){
+    h+=`<div style="margin-top:10px"><b style="font-size:12px">Per project (${names.length})</b>
+      <div class="tbl-freeze" style="max-height:260px;margin-top:4px"><table class="rtable"><thead><tr><th>Project</th><th style="text-align:right">Lines</th><th style="text-align:right">Paid</th><th style="text-align:right">Invoiced</th><th style="text-align:right">Planned</th><th style="text-align:right">Total</th></tr></thead><tbody>`;
+    for(const n of names){const b=d.byProj[n];
+      h+=`<tr><td>${escAttr(n)}</td><td style="text-align:right">${b.n}</td><td style="text-align:right">${incGBP(b.paid)}</td><td style="text-align:right">${incGBP(b.inv)}</td><td style="text-align:right">${incGBP(b.plan)}</td><td style="text-align:right;font-weight:600">${incGBP(b.amt)}</td></tr>`;}
+    h+=`</tbody></table></div></div>`;
+  }
+  h+=`<div class="row" style="margin-top:12px">${d.apply?`<button class="btn btn-primary btn-sm" onclick="doIncImport()">Apply import — ${d.apply} installments</button>`:`<div style="font-size:12px;color:var(--dkgrey)">Nothing left to import from this packet.</div>`}</div></div>`;
+  return h;
+}
+
+window.doIncImport=function(){
+  if(!incPacket)return;
+  const d=incDryRun(incPacket.data);
+  openConfirmModal('Apply the income forecast import',
+    `Write ${d.apply} installments onto ${Object.keys(d.byProj).length} projects, along with the fees, likelihoods and corrections listed in the preview? Take a backup first if you have not already. This can be undone with Ctrl+Z in this session only.`,
+    'import','doIncImportConfirmed',[]);
+}
+
+window.doIncImportConfirmed=function(){
+  if(!incPacket)return;
+  const pk=incPacket.data,done=incCellsDone(),log=[];
+  let nInv=0,nFee=0,nSkip=0;
+  // 1. project code corrections
+  for(const f of pk.codeFixes||[]){
+    const p=st.projects.find(x=>incNorm(x.code)===incNorm(f.from)&&(!f.project||incNorm(x.name)===incNorm(f.project)));
+    if(p){p.code=f.to;log.push(`Code corrected: ${p.name} → ${f.to}`);}
+  }
+  // 2. clients
+  for(const c of pk.newClients||[]){
+    if(st.clients.some(x=>incNorm(x.company)===incNorm(c.company)))continue;
+    st.clients.push({id:`c-${Date.now()}-${Math.floor(Math.random()*9999)}`,company:c.company,contact:'',email:'',phone:''});
+    log.push(`Client added: ${c.company}`);
+  }
+  // 3. projects
+  for(const np of pk.newProjects||[]){
+    if(incProjByCode(np.code,np.name)||st.projects.some(p=>p.name===np.name))continue;
+    const cl=st.clients.find(x=>incNorm(x.company)===incNorm(np.client));
+    const p={code:np.code,name:np.name,clientId:cl?cl.id:null,clientName:cl?cl.company:(np.client||null),
+      contactId:null,startDate:null,endDate:null,phases:[],feeMode:np.feeMode==='total'?'total':'stage',
+      totalFee:0,rateOverrides:{},feeNotes:'',projNotes:'',invoices:[]};
+    ensureRibaStages(p);
+    const ph=incPhase(p,np.activate);if(ph)ph.active=true;
+    st.projects.push(p);log.push(`Project created: ${np.code} ${np.name}`);
+  }
+  // 4. fee mode conversions
+  for(const c of pk.convert||[]){
+    const p=incProjByCode(c.code,c.project);
+    if(p&&p.feeMode!=='stage'){p.feeMode='stage';log.push(`${p.name}: fee mode → per stage`);}
+  }
+  // 5. custom stages
+  for(const c of pk.customStages||[]){
+    const p=incProjByCode(c.code,c.project);if(!p)continue;
+    if(!incPhase(p,c.stage)){p.phases.push({name:c.stage,fee:null,active:true});log.push(`${p.name}: stage “${c.stage}” added`);}
+  }
+  // 6. stage fees — only where the stage has no fee of its own
+  for(const fw of pk.feeWrites||[]){
+    const p=incProjByCode(fw.code,fw.project);if(!p)continue;
+    const ph=incPhase(p,fw.stage);if(!ph)continue;
+    if((parseFloat(ph.fee)||0)>0){log.push(`${p.name} — ${fw.stage}: fee left at ${incGBP(ph.fee)}`);continue;}
+    ph.fee=fw.fee;ph.active=true;nFee++;
+  }
+  // 7. deliberate fee corrections
+  for(const fc of pk.feeCorrections||[]){
+    const p=incProjByCode(fc.code,fc.project);if(!p)continue;
+    if(fc.field==='totalFee'){p.totalFee=fc.to;log.push(`${p.name}: total fee ${incGBP(fc.from)} → ${incGBP(fc.to)}`);}
+    else{const ph=incPhase(p,fc.stage);if(ph){ph.fee=fc.to;ph.active=true;log.push(`${p.name} — ${fc.stage}: fee ${incGBP(fc.from)} → ${incGBP(fc.to)}`);}}
+  }
+  // 8. fee notes
+  for(const fn of pk.feeNotes||[]){
+    const p=incProjByCode(fn.code,fn.project);if(!p)continue;
+    if((p.feeNotes||'').indexOf(fn.note)>=0)continue;
+    p.feeNotes=((p.feeNotes||'').trim()?p.feeNotes.trim()+'\n\n':'')+fn.note;
+  }
+  // 9. likelihoods
+  for(const l of pk.likelihoods||[]){
+    const p=incProjByCode(l.code,l.project);if(!p)continue;
+    if(l.stage){const ph=incPhase(p,l.stage);if(ph)ph.likelihood=l.likelihood;}
+    else p.planColor=(Object.keys(LIK_BY_COLOR).find(k=>LIK_BY_COLOR[k]===l.likelihood)||p.planColor);
+  }
+  // 10. housekeeping
+  for(const c of pk.cleanups||[]){
+    const p=incProjByCode(c.code,c.project);if(!p||c.action!=='drop-empty-invoice')continue;
+    const strip=list=>(list||[]).filter(v=>!((parseFloat(v.amount)||0)===0&&!v.date&&!v.ref));
+    const before=(p.invoices||[]).length+(p.phases||[]).reduce((n,ph)=>n+(ph.invoices||[]).length,0);
+    p.invoices=strip(p.invoices);for(const ph of p.phases||[])ph.invoices=strip(ph.invoices);
+    const after=(p.invoices||[]).length+(p.phases||[]).reduce((n,ph)=>n+(ph.invoices||[]).length,0);
+    if(after<before)log.push(`${p.name}: ${before-after} empty invoice row removed`);
+  }
+  // 11. installments
+  for(const v of pk.invoices){
+    if(done[v.cell]){nSkip++;continue;}
+    const p=incProjByCode(v.code,v.project);
+    if(!p){nSkip++;continue;}
+    let list;
+    if(v.target==='stage'){const ph=incPhase(p,v.stage);if(!ph){nSkip++;continue;}ph.invoices=ph.invoices||[];ph.active=true;list=ph.invoices;}
+    else{p.invoices=p.invoices||[];list=p.invoices;}
+    const paid=!!v.paid;
+    list.push({id:crmId('iv'),amount:parseFloat(v.amount)||0,date:v.date||'',ref:v.ref||'',
+      invoiced:paid||!!v.invoiced,confirmed:paid||!!v.invoiced||v.confirmed!==false,
+      paid,paidDate:paid?(v.paidDate||v.date||''):'',expenses:[]});
+    done[v.cell]=true;nInv++;
+  }
+  // 12. client expenses ride on an existing invoice
+  for(const e of pk.expenses||[]){
+    const p=incProjByCode(e.code,e.project);if(!p)continue;
+    const all=[...(p.invoices||[]),...(p.phases||[]).flatMap(ph=>ph.invoices||[])];
+    const target=all.find(v=>v.paid)||all[0];
+    if(!target)continue;
+    target.expenses=target.expenses||[];
+    if(target.expenses.some(x=>x.desc===e.desc))continue;
+    target.expenses.push({id:crmId('ix'),desc:e.desc,amount:parseFloat(e.amount)||0,date:e.date||''});
+    log.push(`${p.name}: client expense ${incGBP(e.amount)} attached`);
+  }
+  for(const p of st.projects)normProjInvoices(p);
+  st.meta.incImportAt=new Date().toISOString();
+  st.meta.incImportBy=st.currentUser||'';
+  incResult={added:nInv,fees:nFee,skipped:nSkip,log};
+  incPacket=null;
+  save();render();
+}
 let restoreFileData=null;
 window.restoreFileChanged=function(input){
   const f=input.files&&input.files[0];if(!f)return;
@@ -6431,6 +6639,17 @@ function buildImport(){
       <div style="flex:1;min-width:220px"><label>Restore from a backup file</label><input type="file" accept=".json,application/json" onchange="restoreFileChanged(this)"/></div>
       ${restoreFileData?`<button class="btn btn-sm" style="background:var(--danger);border-color:var(--danger);color:#fff" onclick="doRestoreJSON()">Restore “${escAttr(restoreFileData.name)}” — replaces everything</button>`:''}
     </div>
+  </div>
+`;
+  h+=`<div class="card">
+    <div class="card-title">Income forecast import (one-time)</div>
+    <p style="font-size:11px;color:var(--dkgrey);line-height:1.6;margin:0 0 10px">Loads the practice cashflow spreadsheet's income forecast into the app as invoices — the fee schedule for every project, with paid, invoiced and planned installments, stage fees and likelihoods. The packet is prepared offline and checked here before anything is written. <b>Take a backup first.</b> It is safe to load the same packet twice: every installment is stamped with the row it came from, and ones already imported are skipped.</p>
+    ${st.meta&&st.meta.incImportAt?`<div class="notice" style="margin:0 0 10px">A packet was already imported on ${escAttr(String(st.meta.incImportAt).slice(0,10))}${st.meta.incImportBy?' by '+escAttr(st.meta.incImportBy):''}. Loading another only adds installments that are not in the app yet.</div>`:''}
+    ${incResult?`<div class="notice" style="margin:0 0 10px"><b>Import complete.</b> ${incResult.added} installment${incResult.added===1?'':'s'} added${incResult.fees?`, ${incResult.fees} stage fee${incResult.fees===1?'':'s'} written`:''}${incResult.skipped?`, ${incResult.skipped} skipped`:''}. ${incResult.log.length?`<details style="margin-top:6px"><summary style="cursor:pointer">What changed (${incResult.log.length})</summary><ul style="margin:6px 0 0 16px;line-height:1.7">${incResult.log.map(l=>`<li>${escAttr(l)}</li>`).join('')}</ul></details>`:''}</div>`:''}
+    <div class="row" style="align-items:flex-end">
+      <div style="flex:1;min-width:220px"><label>Income forecast packet (.json)</label><input type="file" accept=".json,application/json" onchange="incPacketChanged(this)"/></div>
+    </div>
+    ${incPreview()}
   </div>
 `;
   h+=buildTrash();
