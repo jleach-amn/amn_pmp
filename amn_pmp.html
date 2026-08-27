@@ -621,8 +621,8 @@ const STORE_KEY='amn_tracker_v1';
 // The newest build anyone opens records its number in the shared state
 // (st.meta.appBuild); a copy whose APP_BUILD is lower shows a "reopen from
 // SharePoint" banner. APP_VERSION_LABEL is the human-facing date, display only.
-const APP_BUILD=32;
-const APP_VERSION_LABEL='20 Aug 2026';
+const APP_BUILD=38;
+const APP_VERSION_LABEL='22 Aug 2026';
 
 let _sbSession=null;
 let _sbSaveTimer=null;
@@ -1171,6 +1171,7 @@ function normCpd(e){
   }
   if(!Array.isArray(e.arb))e.arb=[];
   if(!Array.isArray(e.pdbr))e.pdbr=[];
+  if(typeof e.edi!=='boolean')e.edi=false;   // practice topic: equality, diversity & inclusion
   if(!e.format)e.format='Structured';
   if(typeof e.evidence!=='string')e.evidence='';
   if(typeof e.applying!=='string')e.applying='';
@@ -1189,7 +1190,7 @@ function applyGuards(){
   // project likelihood colours (Joe, 15 Jul) — old colours cleared for a fresh start.
   if(!st.meta.projColorsV2){for(const p of st.projects||[])delete p.planColor;st.meta.projColorsV2=true;}
   // Legacy 'notes' (all Harvest fee history) -> feeNotes; projNotes is the new PM-visible field.
-  for(const p of st.projects||[]){if(p.notes&&!p.feeNotes){p.feeNotes=p.notes;}if('notes'in p)delete p.notes;if(typeof p.feeNotes!=='string')p.feeNotes=p.feeNotes||'';if(typeof p.projNotes!=='string')p.projNotes=p.projNotes||'';for(const _mk of['address','description','roleDesc'])if(typeof p[_mk]!=='string')p[_mk]=p[_mk]||'';if(typeof p.comments==='string'&&p.comments.trim()&&!(p.projNotes||'').includes(p.comments.trim())){p.projNotes=((p.projNotes||'').trim()?p.projNotes.trim()+'\n\n':'')+p.comments.trim();}if('comments'in p)delete p.comments;ensureRibaStages(p);for(const ph of p.phases||[])if('likelihood'in ph&&![100,40,10,0].includes(ph.likelihood))delete ph.likelihood;normProjInvoices(p);}
+  for(const p of st.projects||[]){if(p.notes&&!p.feeNotes){p.feeNotes=p.notes;}if('notes'in p)delete p.notes;if(typeof p.feeNotes!=='string')p.feeNotes=p.feeNotes||'';if(typeof p.projNotes!=='string')p.projNotes=p.projNotes||'';for(const _mk of['address','description','roleDesc'])if(typeof p[_mk]!=='string')p[_mk]=p[_mk]||'';if(!p.features||typeof p.features!=='object')p.features={};for(const _fk of PROJ_FEATURES)if(typeof p.features[_fk.k]!=='boolean')p.features[_fk.k]=false;if(typeof p.comments==='string'&&p.comments.trim()&&!(p.projNotes||'').includes(p.comments.trim())){p.projNotes=((p.projNotes||'').trim()?p.projNotes.trim()+'\n\n':'')+p.comments.trim();}if('comments'in p)delete p.comments;ensureRibaStages(p);for(const ph of p.phases||[])if('likelihood'in ph&&![100,40,10,0].includes(ph.likelihood))delete ph.likelihood;normProjInvoices(p);}
   for(const e of st.cpd||[]){if(!Array.isArray(e.speakers))e.speakers=[];}
   ['users','projects','clients','planAssignments','milestones','leaveRows','nbRows','placeholders','planProjectRows','trash','cpd','cpdNotices','crmOrgs','crmContacts','crmInteractions','crmActions','crmLeads','crmEvents','leaveRequests','leaveClosures','leaveNotices'].forEach(k=>{if(!Array.isArray(st[k]))st[k]=[];});
   st.leaveRequests.forEach(normLeaveReq);
@@ -2552,10 +2553,11 @@ function pFee(pn){const p=st.projects.find(x=>x.name===pn);if(!p)return 0;
 // Rules: an invoiced installment is always confirmed, and a paid one is always
 // invoiced (both enforced here and in updInvoice). paidDate = money received.
 function normInvList(a){if(!Array.isArray(a))return[];const out=[];for(const v of a){if(!v||typeof v!=='object')continue;
-  const pd=!!v.paid;out.push({id:typeof v.id==='string'&&v.id?v.id:crmId('iv'),amount:parseFloat(v.amount)||0,date:typeof v.date==='string'?v.date:'',ref:typeof v.ref==='string'?v.ref:'',invoiced:pd||!!v.invoiced,confirmed:pd||!!v.invoiced||!!v.confirmed,paid:pd,paidDate:pd&&typeof v.paidDate==='string'?v.paidDate:'',expenses:normInvExp(v.expenses)});}
+  const pd=!!v.paid;out.push({id:typeof v.id==='string'&&v.id?v.id:crmId('iv'),amount:parseFloat(v.amount)||0,date:typeof v.date==='string'?v.date:'',ref:typeof v.ref==='string'?v.ref:'',invoiced:pd||!!v.invoiced,confirmed:pd||!!v.invoiced||!!v.confirmed,paid:pd,paidDate:pd&&typeof v.paidDate==='string'?v.paidDate:'',expenses:normInvExp(v.expenses,pd||!!v.invoiced)});}
   return out;}
 function normProjInvoices(p){p.invoices=normInvList(p.invoices);for(const ph of p.phases||[])ph.invoices=normInvList(ph.invoices);}
-function invSums(list){let conf=0,inv=0,all=0,n=0,paid=0,exp=0,expInv=0,expPaid=0;for(const v of list||[]){const a=parseFloat(v.amount)||0,x=invExpSum(v);n++;all+=a;exp+=x;if(v.confirmed)conf+=a;if(v.invoiced){inv+=a;expInv+=x;}if(v.paid){paid+=a;expPaid+=x;}}return{conf,inv,all,n,paid,exp,expInv,expPaid};}
+function invSums(list){let conf=0,inv=0,all=0,n=0,paid=0,exp=0,expInv=0,expPaid=0;for(const v of list||[]){const a=parseFloat(v.amount)||0,x=invExpSum(v),xi=invExpInvSum(v);n++;all+=a;exp+=x;expInv+=xi;if(v.confirmed)conf+=a;if(v.invoiced)inv+=a;if(v.paid){paid+=a;expPaid+=xi;}}return{conf,inv,all,n,paid,exp,expInv,expPaid};}
+function invExpInvSum(v){let t=0;for(const x of (v&&v.expenses)||[])if(x.invoiced)t+=parseFloat(x.amount)||0;return t;}
 function pInvSums(pn){const p=st.projects.find(x=>x.name===pn);if(!p)return{conf:0,inv:0,all:0,n:0,paid:0,exp:0,expInv:0,expPaid:0};
   if(p.feeMode==='total')return invSums(p.invoices);
   const t={conf:0,inv:0,all:0,n:0,paid:0,exp:0,expInv:0,expPaid:0};for(const ph of p.phases||[]){const s=invSums(ph.invoices);t.conf+=s.conf;t.inv+=s.inv;t.all+=s.all;t.n+=s.n;t.paid+=s.paid;t.exp+=s.exp;t.expInv+=s.expInv;t.expPaid+=s.expPaid;}return t;}
@@ -2566,7 +2568,7 @@ function gbpInv(n){n=Number(n||0);const p=Math.round(Math.abs(n)*100)%100!==0;re
 // the fee: they count in every cash figure (Invoiced/Paid/Outstanding, Income
 // page cells, VAT actuals) but NEVER against the stage fee — an expense must
 // not trigger the amber fee-mismatch warning.
-function normInvExp(a){if(!Array.isArray(a))return[];const out=[];for(const x of a){if(!x||typeof x!=='object')continue;out.push({id:typeof x.id==='string'&&x.id?x.id:crmId('ix'),desc:typeof x.desc==='string'?x.desc:'',amount:parseFloat(x.amount)||0,date:typeof x.date==='string'?x.date:''});}return out;}
+function normInvExp(a,parentInv){if(!Array.isArray(a))return[];const out=[];for(const x of a){if(!x||typeof x!=='object')continue;out.push({id:typeof x.id==='string'&&x.id?x.id:crmId('ix'),desc:typeof x.desc==='string'?x.desc:'',amount:parseFloat(x.amount)||0,date:typeof x.date==='string'?x.date:'',invoiced:typeof x.invoiced==='boolean'?x.invoiced:!!parentInv});}return out;}
 function invExpSum(v){let t=0;for(const x of (v&&v.expenses)||[])t+=parseFloat(x.amount)||0;return t;}
 function invAmt(v){return(parseFloat(v.amount)||0)+invExpSum(v);} // cash value: fee + expenses
 // Expense rows come in two variants matching their hosts:
@@ -2578,7 +2580,9 @@ function invExpCells(i,pi,invId,x){
     <span style="display:flex;align-items:center;gap:6px;min-width:0"><span style="font-size:9px;color:var(--dkgrey);font-weight:700;letter-spacing:.06em">EXP</span><input type="text" value="${escAttr(x.desc||'')}" placeholder="e.g. OS map purchase" style="flex:1;min-width:0;font-size:11px" onchange="updInvExp(${i},${pi},'${jsq(invId)}','${jsq(x.id)}','desc',this.value)"/></span>
     <span style="font-size:11px;color:var(--dkgrey);font-weight:600">£</span>
     <input type="number" step="0.01" min="0" value="${x.amount||''}" placeholder="0" style="width:100%;box-sizing:border-box;font-size:11px" onchange="updInvExp(${i},${pi},'${jsq(invId)}','${jsq(x.id)}','amount',this.value)"/>
-    <span style="grid-column:5/9"></span>
+    <span></span>
+    <label style="display:flex;align-items:center;gap:4px;font-size:10px;letter-spacing:.04em;text-transform:uppercase;font-weight:600;color:${x.invoiced?'var(--accent)':'var(--warn)'};cursor:pointer" title="${x.invoiced?'This expense has been billed to the client':'Not yet billed — still to invoice'}"><input type="checkbox" ${x.invoiced?'checked':''} onchange="updInvExp(${i},${pi},'${jsq(invId)}','${jsq(x.id)}','invoiced',this.checked)"/>${x.invoiced?'Invoiced':'To invoice'}</label>
+    <span style="grid-column:7/9"></span>
     <span style="cursor:pointer;color:var(--danger);font-size:14px;font-weight:600;justify-self:center" onclick="delInvExp(${i},${pi},'${jsq(invId)}','${jsq(x.id)}')" title="Remove expense">×</span>`;
 }
 function invExpRowHtml(i,pi,invId,x){
@@ -2587,6 +2591,7 @@ function invExpRowHtml(i,pi,invId,x){
     <span style="flex:1;min-width:50px;display:flex;align-items:center;gap:5px"><span style="font-size:9px;color:var(--dkgrey);font-weight:700;letter-spacing:.06em">EXP</span><input type="text" value="${escAttr(x.desc||'')}" placeholder="e.g. OS map purchase" style="flex:1;min-width:0;font-size:11px" onchange="updInvExp(${i},${pi},'${jsq(invId)}','${jsq(x.id)}','desc',this.value)"/></span>
     <span style="font-size:11px;color:var(--dkgrey);font-weight:600">£</span>
     <input type="number" step="0.01" min="0" value="${x.amount||''}" placeholder="0" style="width:76px;font-size:11px" onchange="updInvExp(${i},${pi},'${jsq(invId)}','${jsq(x.id)}','amount',this.value)"/>
+    <label style="display:flex;align-items:center;gap:4px;font-size:10px;letter-spacing:.04em;text-transform:uppercase;font-weight:600;color:${x.invoiced?'var(--accent)':'var(--warn)'};cursor:pointer" title="${x.invoiced?'This expense has been billed to the client':'Not yet billed — still to invoice'}"><input type="checkbox" ${x.invoiced?'checked':''} onchange="updInvExp(${i},${pi},'${jsq(invId)}','${jsq(x.id)}','invoiced',this.checked)"/>${x.invoiced?'Invoiced':'To invoice'}</label>
     <span style="cursor:pointer;color:var(--danger);font-size:15px;font-weight:600" onclick="delInvExp(${i},${pi},'${jsq(invId)}','${jsq(x.id)}')" title="Remove expense">×</span>
   </div>`;
 }
@@ -2611,7 +2616,7 @@ function invRowHtml(i,pi,v){
     ${xs.map(x=>invExpCells(i,pi,v.id,x)).join('')}
     <div style="grid-column:1/-1;display:flex;align-items:center;gap:10px;padding-top:1px">
       <button class="btn btn-sm" style="font-size:10px;padding:2px 9px" onclick="addInvExp(${i},${pi},'${jsq(v.id)}')" title="A cost incurred on the client's behalf (e.g. an OS map), billed on this invoice on top of the fee — counts in the cash figures, never against the stage fee">+ Expense</button>
-      ${xt>0.005?`<span style="font-size:10px;color:var(--dkgrey)">expenses ${gbpInv(xt)} · invoice total <b>${gbpInv(invAmt(v))}</b></span>`:''}
+      ${xt>0.005?`<span style="font-size:10px;color:var(--dkgrey)">expenses ${gbpInv(invExpInvSum(v))} / ${gbpInv(xt)} invoiced${xt-invExpInvSum(v)>0.005?` · <b style="color:var(--warn)">${gbpInv(xt-invExpInvSum(v))} to invoice</b>`:''} · invoice total <b>${gbpInv(invAmt(v))}</b></span>`:''}
     </div>
   </div>`;
 }
@@ -2621,7 +2626,7 @@ function invTotalsStrip(s,fee,scope){
     <div class="inv-stat"><div class="lbl">Total invoices (confirmed)</div><div class="val" style="color:${mm?'var(--warn)':'var(--ok)'}">${gbpInv(s.conf)}</div><div class="sub" style="color:${mm?'var(--warn)':'var(--ok)'}">${fee?(mm?`⚠ ${scope} fee is ${gbpInv(fee)}`:'matches the fee'):(s.conf>0.005?'⚠ no fee set':'')}</div></div>
     <div class="inv-stat"><div class="lbl">Invoiced to date</div><div class="val" style="color:var(--blk)">${gbpInv(s.inv)}</div><div class="sub" style="color:var(--dkgrey)">${s.conf-s.inv>0.005?gbpInv(s.conf-s.inv)+' still to invoice':''}</div></div>
     <div class="inv-stat"><div class="lbl">Paid</div><div class="val" style="color:#B04A3F">${gbpInv(s.paid)}</div><div class="sub" style="color:var(--dkgrey)">${s.inv-s.paid>0.005?gbpInv(s.inv-s.paid)+' invoiced, awaiting payment':''}</div></div>
-    ${s.exp>0.005?`<div class="inv-stat"><div class="lbl">Client expenses</div><div class="val" style="color:var(--blk)">${gbpInv(s.exp)}</div><div class="sub" style="color:var(--dkgrey)">${gbpInv(s.expInv)} billed · ${gbpInv(s.expPaid)} paid — on top of the fee</div></div>`:''}
+    ${s.exp>0.005?`<div class="inv-stat"><div class="lbl">Client expenses</div><div class="val" style="color:${s.exp-s.expInv>0.005?'var(--warn)':'var(--blk)'}">${gbpInv(s.expInv)} / ${gbpInv(s.exp)}</div><div class="sub" style="color:${s.exp-s.expInv>0.005?'var(--warn)':'var(--dkgrey)'}">${s.exp-s.expInv>0.005?gbpInv(s.exp-s.expInv)+' still to invoice':'all invoiced'} · ${gbpInv(s.expPaid)} paid — on top of the fee</div></div>`:''}
     ${s.all>s.conf+0.005?`<div class="inv-stat"><div class="lbl">Unconfirmed (excluded)</div><div class="val" style="color:var(--grey)">${gbpInv(s.all-s.conf)}</div><div class="sub" style="color:var(--grey)">not counted in the totals</div></div>`:''}
   </div>`;
 }
@@ -2653,7 +2658,7 @@ function invPanel(i){
       <div style="font-size:10px;letter-spacing:.07em;text-transform:uppercase;color:var(--dkgrey);font-weight:700;margin-bottom:6px">Project total — all stages</div>
       ${invTotalsStrip(g,fee,'project')}
     </div>`:'';
-  return `${pInvSums(p.name).n?`<div style="display:flex;justify-content:flex-end;margin:0 0 8px"><button class="btn btn-sm" onclick="exportFeeSchedule(${i})" title="A branded, client-ready schedule of this project's invoices and expenses, dated today — opens the print dialog; choose 'Save as PDF'">Export fee schedule</button></div>`:''}<p style="font-size:11px;color:var(--dkgrey);margin:0 0 10px;line-height:1.5">Track the invoices for ${total?'the project':'each stage'}. Xero still creates and issues them — this is the record. Future dates are planned invoices (for cashflow). <b>Confirmed</b> installments count toward the totals; untick it for fees that may never materialise. <b>Invoiced</b> means it has gone out through Xero — ticking it confirms the fee automatically. <b>Paid</b> records the money landing in the bank (the received date is kept) — the Income page colours cells cyan while an invoice is awaiting payment and salmon once it's paid. <b>+ expense</b> on an invoice records a cost incurred on the client's behalf (e.g. an OS map) — billed on top of the fee, it counts in the cash figures but never against the stage fee.</p>
+  return `${pInvSums(p.name).n?`<div style="display:flex;justify-content:flex-end;margin:0 0 8px"><button class="btn btn-sm" onclick="exportFeeSchedule(${i})" title="A branded, client-ready schedule of this project's invoices and expenses, dated today — opens the print dialog; choose 'Save as PDF'">Export fee schedule</button></div>`:''}<p style="font-size:11px;color:var(--dkgrey);margin:0 0 10px;line-height:1.5">Track the invoices for ${total?'the project':'each stage'}. Xero still creates and issues them — this is the record. Future dates are planned invoices (for cashflow). <b>Confirmed</b> installments count toward the totals; untick it for fees that may never materialise. <b>Invoiced</b> means it has gone out through Xero — ticking it confirms the fee automatically. <b>Paid</b> records the money landing in the bank (the received date is kept) — the Income page colours cells cyan while an invoice is awaiting payment and salmon once it's paid. <b>+ expense</b> on an invoice records a cost incurred on the client's behalf (e.g. an OS map) — billed on top of the fee, it counts in the cash figures but never against the stage fee. Each expense carries its own <b>Invoiced</b> tick: unticked means it is still to be billed, and the Client-expenses figure shows invoiced / total with anything outstanding flagged.</p>
       ${blocks}
       ${grand}`;
 }
@@ -2674,7 +2679,7 @@ function feeScheduleHTML(i){
     :(p.phases||[]).filter(ph=>(ph.invoices&&ph.invoices.length)||ph.fee).map(ph=>({label:ph.name,fee:parseFloat(ph.fee)||0,list:ph.invoices||[]}));
   const row=v=>{const xs=v.expenses||[];return `<tr>
       <td>${v.date?fmt(parseISO(v.date)):'—'}</td>
-      <td>${escAttr(v.ref||'')}${xs.map(x=>`<div class="fs-exp">+ ${escAttr(x.desc||'expense')}${x.date?` — ${fmt(parseISO(x.date))}`:''}</div>`).join('')}</td>
+      <td>${escAttr(v.ref||'')}${xs.map(x=>`<div class="fs-exp">+ ${escAttr(x.desc||'expense')}${x.date?` — ${fmt(parseISO(x.date))}`:''}${x.invoiced?'':' — not yet invoiced'}</div>`).join('')}</td>
       <td class="r">${gbpInv(parseFloat(v.amount)||0)}${xs.map(x=>`<div class="fs-exp">${gbpInv(parseFloat(x.amount)||0)}</div>`).join('')}</td>
       <td class="r"><b>${gbpInv(invAmt(v))}</b></td>
       <td>${statusOf(v)}</td></tr>`;};
@@ -2720,7 +2725,7 @@ function feeScheduleHTML(i){
     <div>Invoiced to date${g.exp>0.005?' (inc. expenses)':''}<b>${gbpInv(g.inv)}</b></div>
     <div>Paid<b>${gbpInv(g.paid)}</b></div>
     <div>Outstanding<b>${gbpInv(g.inv-g.paid)}</b></div>
-    ${g.exp>0.005?`<div>Client expenses<b>${gbpInv(g.exp)}</b></div>`:''}
+    ${g.exp>0.005?`<div>Client expenses${g.exp-g.expInv>0.005?` (${gbpInv(g.exp-g.expInv)} not yet invoiced)`:''}<b>${gbpInv(g.exp)}</b></div>`:''}
   </div>
   <div class="ft">A M Nicholson Limited — prepared from the amn practice portal. Planned installments are indicative and subject to appointment.</div>
   </body></html>`;
@@ -3360,7 +3365,7 @@ function buildLog(){
     if(addProjs.length){
       h+=`<tr class="add-row"><td colspan="12">
         <div style="display:flex;gap:8px;align-items:center">
-          <input type="text" id="ts-addproj" list="ts-addproj-list" placeholder="+ Type project name or code" style="min-width:200px;font-size:11px" onchange="refreshStageDropdown()" autocomplete="off"/>
+          <input type="text" id="ts-addproj" list="ts-addproj-list" placeholder="+ Type project name or code" style="min-width:200px;font-size:11px" onchange="refreshStageDropdown('${jsq(wk)}','${jsq(targetName)}')" autocomplete="off"/>
           <datalist id="ts-addproj-list">
             ${addProjs.map(p=>`<option value="${escAttr(projLabel(p))}">`).join('')}
           </datalist>
@@ -3728,6 +3733,8 @@ function renderPlanBreakdown(){
 
 // Project likelihood / temperature — the ONLY four colours a project may take,
 // shared by the Projects page and the Forecast so they can never diverge.
+const PROJ_FEATURES=[{k:'basement',label:'Basement'},{k:'existingBuildings',label:'Existing buildings'},{k:'swimmingPool',label:'Swimming pool'}];
+function projFeatureList(p){return PROJ_FEATURES.filter(f=>p&&p.features&&p.features[f.k]).map(f=>f.label);}
 const PROJ_TEMPS=[
   {c:'#718157',label:'100% — project is a go'},
   {c:'#DFA64F',label:'40% — likely'},
@@ -3923,7 +3930,11 @@ function buildAssignmentRow(kind,identity,person,cols,rowLabel,indent,removable,
   labelSpan=labelSpan||2; // Projects table has # + Name columns; Team has one
   const edR=planEditor();
   if(!edR)removable=false;
-  const removeHandler=`triggerRemovePlanPerson('${escAttr(identity.project)}','${escAttr(identity.stage)}','${escAttr(person)}')`;
+  // jsq, NOT escAttr: these are JS string literals inside an onclick. escAttr
+  // alone leaves the apostrophe live in the decoded JS, so any name containing
+  // one ("Bishop's Stortford Site S") produced a SyntaxError and a dead ×
+  // (Joe, 21 Aug: "I can't delete Laura from this project").
+  const removeHandler=`triggerRemovePlanPerson('${jsq(identity.project)}','${jsq(identity.stage)}','${jsq(person)}')`;
   const chosenProject=kind==='proj'?identity.project:(kind==='leave'?'__leave__':'__nb__');
   const chosenStage=kind==='proj'?identity.stage:'';
   let h=`<tr class="plan-person-row${kind==='leave'?' plan-krow-leave':kind==='nb'?' plan-krow-nb':''}"><td class="plan-rowhead plan-person-cell" colspan="${labelSpan}" style="padding-left:${indent}px">
@@ -4496,13 +4507,14 @@ function buildHealthDetail(projName){
     <button class="hsec-tab${healthSection==='overview'?' hsec-on':''}" onclick="healthSec('overview')">Project Details</button>
   </div>`;
   if(healthSection==='overview'){
-    const hasAbout=proj.description||proj.roleDesc||proj.address||proj.startDate||proj.endDate;
+    const featLabels=projFeatureList(proj);const hasAbout=proj.description||proj.roleDesc||proj.address||proj.startDate||proj.endDate||featLabels.length;
     h+=`<div class="card" style="margin-bottom:14px"><div class="card-title">About</div>
       ${proj.description?`<div style="font-size:12px;color:var(--blk);line-height:1.6;margin-bottom:8px;white-space:pre-wrap">${escAttr(proj.description)}</div>`:''}
       ${proj.roleDesc?`<div style="font-size:11px;color:var(--dkgrey);line-height:1.6;margin-bottom:8px"><span style="font-size:9px;letter-spacing:.08em;text-transform:uppercase;font-weight:700;color:var(--grey)">Our role</span><br/>${escAttr(proj.roleDesc)}</div>`:''}
       ${proj.address?`<div style="font-size:11px;color:var(--dkgrey);margin-bottom:8px"><span style="font-size:9px;letter-spacing:.08em;text-transform:uppercase;font-weight:700;color:var(--grey)">Site address</span><br/>${escAttr(proj.address)}</div>`:''}
-      ${proj.startDate||proj.endDate?`<div style="font-size:11px;color:var(--dkgrey)"><span style="font-size:9px;letter-spacing:.08em;text-transform:uppercase;font-weight:700;color:var(--grey)">Dates</span><br/>${proj.startDate?`Start ${fmtLong(new Date(proj.startDate))}`:''}${proj.startDate&&proj.endDate?' · ':''}${proj.endDate?`End ${fmtLong(new Date(proj.endDate))}`:''}</div>`:''}
-      ${!hasAbout?`<div style="font-size:12px;color:var(--grey);font-style:italic">Nothing recorded yet${canEdit?' — Edit adds the description, role and address':''}.</div>`:''}
+      ${proj.startDate||proj.endDate?`<div style="font-size:11px;color:var(--dkgrey);margin-bottom:8px"><span style="font-size:9px;letter-spacing:.08em;text-transform:uppercase;font-weight:700;color:var(--grey)">Dates</span><br/>${proj.startDate?`Start ${fmtLong(new Date(proj.startDate))}`:''}${proj.startDate&&proj.endDate?' · ':''}${proj.endDate?`End ${fmtLong(new Date(proj.endDate))}`:''}</div>`:''}
+      ${featLabels.length?`<div style="font-size:11px;color:var(--dkgrey)"><span style="font-size:9px;letter-spacing:.08em;text-transform:uppercase;font-weight:700;color:var(--grey)">Site features</span><br/><span style="display:inline-flex;flex-wrap:wrap;gap:6px;margin-top:4px">${featLabels.map(l=>`<span class="badge" style="font-size:11px;padding:3px 9px">${escAttr(l)}</span>`).join('')}</span></div>`:''}
+      ${!hasAbout?`<div style="font-size:12px;color:var(--grey);font-style:italic">Nothing recorded yet${canEdit?' — Edit adds the description, role, address and site features':''}.</div>`:''}
     </div>`;
     h+=`${proj.projNotes&&canManage()?`<div class="card" style="margin-bottom:14px"><div class="card-title">Project Notes <span style="font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--grey);font-weight:600">admins & PMs</span></div><div style="font-size:12px;line-height:1.7;white-space:pre-wrap;color:var(--blk)">${escAttr(proj.projNotes)}</div></div>`:''}`;
     if(canManage()){
@@ -4785,6 +4797,13 @@ function buildProjects(){
         <div style="flex:1;min-width:120px"><label>Start date</label><input id="np-start" type="date"/></div>
         <div style="flex:1;min-width:120px"><label>End date</label><input id="np-end" type="date"/></div>
       </div>
+      <div class="row">
+        <div style="flex:1;min-width:200px"><label>Site address</label><input id="np-address" placeholder="e.g. Lynn Road, Ely, CB6 1DN"/></div>
+      </div>
+      <div style="margin-bottom:14px">
+        <label style="font-size:10px;letter-spacing:.07em;text-transform:uppercase;color:var(--dkgrey);display:block;margin-bottom:8px;font-weight:600">Site features</label>
+        <div style="display:flex;flex-wrap:wrap;gap:16px">${PROJ_FEATURES.map(f=>`<label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer"><input type="checkbox" class="np-feature" value="${f.k}"/>${f.label}</label>`).join('')}</div>
+      </div>
       <div style="margin-bottom:14px">
         <label style="font-size:10px;letter-spacing:.07em;text-transform:uppercase;color:var(--dkgrey);display:block;margin-bottom:8px;font-weight:600">Stages &amp; Fees</label>
         <div style="margin-bottom:10px"><span style="font-size:12px;color:var(--dkgrey)">Default RIBA stages pre-added. Set fees after creation, or add custom stages below.</span></div>
@@ -4992,6 +5011,10 @@ function buildProjEdit(i){
     </div>
     <div class="row">
       <div style="flex:1;min-width:200px"><label>Our role</label><textarea id="ep-roledesc-${i}" rows="2" style="width:100%;font-size:12px;line-height:1.6;font-family:'Figtree',sans-serif;resize:vertical" placeholder="e.g. Lead designer — preparation of the pre-application document">${escAttr(epv('ep-roledesc',p.roleDesc||''))}</textarea></div>
+    </div>
+    <div style="margin-bottom:4px">
+      <label style="font-size:10px;letter-spacing:.07em;text-transform:uppercase;color:var(--dkgrey);display:block;margin-bottom:8px;font-weight:600">Site features</label>
+      <div style="display:flex;flex-wrap:wrap;gap:16px">${PROJ_FEATURES.map(f=>`<label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer"><input type="checkbox" class="ep-feature-${i}" value="${f.k}" ${(p.features&&p.features[f.k])?'checked':''}/>${f.label}</label>`).join('')}</div>
     </div>`);
 
   // ── Project notes (above everything fee-related) ─────────────────────────────
@@ -5747,6 +5770,7 @@ function buildHome(){
       <div style="display:flex;gap:18px;flex-wrap:wrap;margin-bottom:8px">
         <div><div class="metric-label">Hours (target 35)</div><div class="metric-value" style="font-size:22px;color:${cpdHrs>=35?'var(--blk)':'var(--dkgrey)'}">${cpdHrs.toFixed(1)}h</div></div>
         <div><div class="metric-label">Structured</div><div class="metric-value" style="font-size:22px;color:var(--dkgrey)">${cpdStr.toFixed(1)}h</div></div>
+        <div><div class="metric-label" title="Equality, diversity &amp; inclusion — the practice's own annual requirement">EDI</div><div class="metric-value" style="font-size:22px;color:var(--dkgrey)">${cpdEdiFor(u.name,yr).toFixed(1)}h</div></div>
       </div>
       <div style="font-size:11px;color:var(--dkgrey);margin-bottom:6px">${arbRows.map(r=>`<span style="margin-right:10px;white-space:nowrap">${r.ok?'<span style="color:#5F7046;font-weight:700">✓</span>':'<span style="color:var(--danger);font-weight:700">✗</span>'} ${escAttr(r.t)}</span>`).join('')}</div>
       ${upCpd.map(e=>`<div style="font-size:12px;padding:2px 0;display:flex;justify-content:space-between;gap:10px"><span>${escAttr(e.title)}</span><span style="color:var(--dkgrey);white-space:nowrap">${fmt(parseISO(e.date))} · ${e.durationHours}h</span></div>`).join('')}
@@ -6021,6 +6045,11 @@ window.cpdArbRemove=function(i){
 }
 function cpdEntriesFor(person,year){return st.cpd.filter(e=>e.attendees.includes(person)&&parseISO(e.date).getFullYear()===year);}
 function cpdHoursFor(person,year){return cpdEntriesFor(person,year).reduce((s,e)=>s+(parseFloat(e.durationHours)||0),0);}
+// EDI is the practice's own annual requirement — a few hours a year of
+// equality, diversity & inclusion training. It sits OUTSIDE the ARB mandatory
+// list and the RIBA core curriculum deliberately (Joe, 22 Aug): it is tagged
+// per entry and tracked as hours, with no invented target number.
+function cpdEdiFor(person,year){let t=0;for(const e of st.cpd){if(!e.edi)continue;if(parseISO(e.date).getFullYear()!==year)continue;if(!e.attendees.includes(person))continue;t+=parseFloat(e.durationHours)||0;}return t;}
 function cpdStructuredFor(person,year){return cpdEntriesFor(person,year).filter(e=>e.format!=='Informal').reduce((s,e)=>s+(parseFloat(e.durationHours)||0),0);}
 
 // ── Time integration ──
@@ -6142,11 +6171,11 @@ function buildCPDOverview(){
     </div>
     <div class="card" style="flex:1;min-width:300px">
       <div class="card-title">Per person — ${yr}</div>
-      <table class="rtable"><thead><tr><th>Person</th><th style="text-align:right">Hours</th><th style="text-align:right">Structured</th>${arbTopics().map(t=>`<th style="text-align:center;font-size:9px" title="ARB mandatory: ${escAttr(t)}">${escAttr(t.split(' ')[0])} ✓</th>`).join('')}</tr></thead><tbody>
+      <table class="rtable"><thead><tr><th>Person</th><th style="text-align:right">Hours</th><th style="text-align:right">Structured</th><th style="text-align:right" title="Equality, diversity &amp; inclusion — the practice's own annual requirement">EDI</th>${arbTopics().map(t=>`<th style="text-align:center;font-size:9px" title="ARB mandatory: ${escAttr(t)}">${escAttr(t.split(' ')[0])} ✓</th>`).join('')}</tr></thead><tbody>
       ${people.map(p=>{
         const hrs=cpdHoursFor(p,yr),sh=cpdStructuredFor(p,yr);
         const es=cpdEntriesFor(p,yr);
-        return `<tr><td style="font-weight:600">${escAttr(p)}</td><td class="num">${hrs.toFixed(1)}h</td><td class="num">${sh.toFixed(1)}h</td>${arbTopics().map(t=>`<td style="text-align:center">${es.some(e=>entryCoversArb(e,t))?'✓':'<span style="color:var(--danger)">✗</span>'}</td>`).join('')}</tr>`;}).join('')}
+        return `<tr><td style="font-weight:600">${escAttr(p)}</td><td class="num">${hrs.toFixed(1)}h</td><td class="num">${sh.toFixed(1)}h</td><td class="num">${cpdEdiFor(p,yr).toFixed(1)}h</td>${arbTopics().map(t=>`<td style="text-align:center">${es.some(e=>entryCoversArb(e,t))?'✓':'<span style="color:var(--danger)">✗</span>'}</td>`).join('')}</tr>`;}).join('')}
       </tbody></table>
       <div style="font-size:10px;color:var(--dkgrey);margin-top:8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
         <span>ARB mandatory topics for the year — ✗ means nothing covering it yet (RIBA equivalents count automatically).</span>
@@ -6163,7 +6192,7 @@ function buildCPDOverview(){
   if(!entries.length)h+=`<tr><td colspan="${4+people.length}" style="color:var(--grey);font-style:italic">No CPD recorded in ${yr}.</td></tr>`;
   for(const e of entries){
     h+=`<tr class="proj-click" onclick="cpdOpenEdit('${jsq(e.id)}')" title="Click to open"><td style="white-space:nowrap">${fmt(parseISO(e.date))}<div style="font-size:9px;color:var(--dkgrey)">${escAttr(e.ref||'')}</div></td>
-      <td><div style="font-weight:600">${escAttr(e.title)}</div><div style="font-size:10px;color:var(--dkgrey)">${[(e.riba||[]).join(', '),(e.arb||[]).map(a=>'ARB: '+a).join(', '),(e.pdbr||[]).map(a=>'PD BR: '+a).join(', ')].filter(Boolean).map(escAttr).join(' · ')||'—'}</div></td>
+      <td><div style="font-weight:600">${escAttr(e.title)}</div><div style="font-size:10px;color:var(--dkgrey)">${[(e.riba||[]).join(', '),(e.arb||[]).map(a=>'ARB: '+a).join(', '),(e.pdbr||[]).map(a=>'PD BR: '+a).join(', '),e.edi?'EDI':''].filter(Boolean).map(escAttr).join(' · ')||'—'}</div></td>
       <td class="num">${(parseFloat(e.durationHours)||0).toFixed(1)}h</td>
       ${people.map(p=>`<td style="text-align:center">${e.attendees.includes(p)?'✓':'<span style="color:var(--mid)">—</span>'}</td>`).join('')}
       <td style="text-align:right;white-space:nowrap">${isAdmin()?`<button class="btn btn-danger btn-sm" onclick="event.stopPropagation();doDeleteCPD('${jsq(e.id)}')">Del</button>`:''}</td>
@@ -6193,6 +6222,7 @@ function buildCPDPerson(person){
       <div style="display:flex;gap:22px;flex-wrap:wrap;margin-bottom:10px">
         <div><div class="metric-label">Total</div><div class="metric-value" style="font-size:20px">${hrs.toFixed(1)}h</div></div>
         <div><div class="metric-label">Structured</div><div class="metric-value" style="font-size:20px">${sh.toFixed(1)}h</div></div>
+        <div><div class="metric-label" title="Equality, diversity &amp; inclusion — the practice's own annual requirement">EDI</div><div class="metric-value" style="font-size:20px">${cpdEdiFor(person,yr).toFixed(1)}h</div></div>
         <div><div class="metric-label">Entries</div><div class="metric-value" style="font-size:20px">${entries.length}</div></div>
       </div>
       <div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap">
@@ -6269,7 +6299,7 @@ function renderCpdModal(){
   if(cpdEditing===null){el.innerHTML='';return;}
   const me=cur().name;
   const isNew=cpdEditing==='new';
-  const e=isNew?{date:isoDate(new Date()),title:'',provider:'',durationHours:1,riba:[],arb:[],attendees:[me],notes:'',applying:'',nextSteps:'',reflections:{},createdBy:me,format:'Structured',activityType:'Course / seminar',evidence:''}
+  const e=isNew?{date:isoDate(new Date()),title:'',provider:'',durationHours:1,riba:[],arb:[],edi:false,attendees:[me],notes:'',applying:'',nextSteps:'',reflections:{},createdBy:me,format:'Structured',activityType:'Course / seminar',evidence:''}
               :st.cpd.find(x=>x.id===cpdEditing);
   if(!e){el.innerHTML='';return;}
   normCpd(e);
@@ -6303,6 +6333,10 @@ function renderCpdModal(){
         <div style="border-top:1px solid var(--mid);padding-top:14px;margin-bottom:16px">
           ${L('RIBA core curriculum')}
           ${chkGrid('cpd-riba',CPD_RIBA,e.riba,2)}
+        </div>
+        <div style="margin-bottom:16px">
+          ${L('EDI')}
+          <label style="display:flex;align-items:flex-start;gap:7px;font-size:12px;cursor:pointer;line-height:1.45"><input type="checkbox" class="cpd-edi" ${e.edi?'checked':''} ${dis} style="margin-top:2px"/><span>Equality, diversity &amp; inclusion — the practice's own annual requirement. Tick this alone for EDI-only training, or alongside a RIBA/ARB topic to count toward both.</span></label>
         </div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:16px">
           <div>${L('ARB mandatory topics')}${chkGrid('cpd-arb',arbTopics(),e.arb,1)}
@@ -6357,10 +6391,11 @@ window.doSaveCPD=function(){
     const riba=[...document.querySelectorAll('.cpd-riba:checked')].map(x=>x.value);
     const arb=[...document.querySelectorAll('.cpd-arb:checked')].map(x=>x.value);
     const pdbr=[...document.querySelectorAll('.cpd-pdbr:checked')].map(x=>x.value);
+    const edi=[...document.querySelectorAll('.cpd-edi:checked')].length>0;
     const atts=[...document.querySelectorAll('.cpd-att:checked')].map(x=>x.value);
     if(!atts.length){undoToast('Tick at least one attendee.');return;}
     const speakers=[...document.querySelectorAll('#cpd-speakers .phase-tag')].map(t=>t.dataset.name).filter(Boolean);
-    const base={date,title,provider:val('cpd-provider')||'',speakers,durationHours:hours,riba,arb,pdbr,attendees:atts,notes:val('cpd-notes')||'',applying:val('cpd-applying')||'',nextSteps:val('cpd-nextsteps')||'',activityType:val('cpd-type')||'Course / seminar',format:val('cpd-format')||'Structured',evidence:val('cpd-evidence')||''};
+    const base={date,title,provider:val('cpd-provider')||'',speakers,durationHours:hours,riba,arb,pdbr,edi,attendees:atts,notes:val('cpd-notes')||'',applying:val('cpd-applying')||'',nextSteps:val('cpd-nextsteps')||'',activityType:val('cpd-type')||'Course / seminar',format:val('cpd-format')||'Structured',evidence:val('cpd-evidence')||''};
     if(isNew){
       e={id:'cpd'+Date.now()+Math.floor(Math.random()*1000),...base,reflections:{},createdBy:me,timeWrites:[]};
       st.cpd.push(e);ensureCpdRefs();
@@ -6388,13 +6423,13 @@ window.doDeleteCPDConfirmed=function(id){
 }
 window.doExportCPD=function(person,year){
   const q=(x)=>String(x==null?'':x).replace(/"/g,'""').replace(/[\r\n]+/g,' ');
-  let csv='Reference,Date,Title,Provider,Speakers,Activity type,Format,Hours,RIBA core curriculum,ARB mandatory topics,Principal Designer (Building Regs) competences,What was learned,How it is being applied,Next steps,Evidence,Personal reflection\n';
+  let csv='Reference,Date,Title,Provider,Speakers,Activity type,Format,Hours,RIBA core curriculum,ARB mandatory topics,Principal Designer (Building Regs) competences,EDI,What was learned,How it is being applied,Next steps,Evidence,Personal reflection\n';
   const rows=cpdEntriesFor(person,year).sort((a,b)=>a.date<b.date?-1:1);
   let total=0,struct=0;
   for(const e of rows){
     normCpd(e);
     const hrs=parseFloat(e.durationHours)||0;total+=hrs;if(e.format!=='Informal')struct+=hrs;
-    csv+=`"${q(e.ref||'')}",${e.date},"${q(e.title)}","${q(e.provider)}","${q((e.speakers||[]).join('; '))}","${q(e.activityType)}","${q(e.format)}",${hrs.toFixed(1)},"${q((e.riba||[]).join('; '))}","${q((e.arb||[]).join('; '))}","${q((e.pdbr||[]).join('; '))}","${q(e.notes)}","${q(e.applying)}","${q(e.nextSteps)}","${q(e.evidence)}","${q((e.reflections||{})[person]||'')}"\n`;
+    csv+=`"${q(e.ref||'')}",${e.date},"${q(e.title)}","${q(e.provider)}","${q((e.speakers||[]).join('; '))}","${q(e.activityType)}","${q(e.format)}",${hrs.toFixed(1)},"${q((e.riba||[]).join('; '))}","${q((e.arb||[]).join('; '))}","${q((e.pdbr||[]).join('; '))}","${e.edi?'Yes':''}","${q(e.notes)}","${q(e.applying)}","${q(e.nextSteps)}","${q(e.evidence)}","${q((e.reflections||{})[person]||'')}"\n`;
   }
   csv+=`,,,,,TOTAL,${total.toFixed(1)},"of which structured: ${struct.toFixed(1)}h",,,,,,\n`;
   const blob=new Blob([csv],{type:'text/csv'});
@@ -6405,12 +6440,12 @@ window.doExportCPD=function(person,year){
 // are deliberately excluded — they only appear in each person's own export.
 window.doExportCPDPractice=function(year){
   const q=(x)=>String(x==null?'':x).replace(/"/g,'""').replace(/[\r\n]+/g,' ');
-  let csv='Attendee,Reference,Date,Title,Provider,Speakers,Activity type,Format,Hours,RIBA core curriculum,ARB mandatory topics,Principal Designer (Building Regs) competences,What was learned,How it is being applied,Next steps,Evidence\n';
+  let csv='Attendee,Reference,Date,Title,Provider,Speakers,Activity type,Format,Hours,RIBA core curriculum,ARB mandatory topics,Principal Designer (Building Regs) competences,EDI,What was learned,How it is being applied,Next steps,Evidence\n';
   const entries=st.cpd.filter(e=>parseISO(e.date).getFullYear()===year).sort((a,b)=>a.date<b.date?-1:1);
   const totals={};
   for(const e of entries){normCpd(e);const hrs=parseFloat(e.durationHours)||0;
     for(const p of e.attendees){totals[p]=(totals[p]||0)+hrs;
-      csv+=`"${q(p)}","${q(e.ref||'')}",${e.date},"${q(e.title)}","${q(e.provider)}","${q((e.speakers||[]).join('; '))}","${q(e.activityType)}","${q(e.format)}",${hrs.toFixed(1)},"${q((e.riba||[]).join('; '))}","${q((e.arb||[]).join('; '))}","${q((e.pdbr||[]).join('; '))}","${q(e.notes)}","${q(e.applying)}","${q(e.nextSteps)}","${q(e.evidence)}"\n`;}}
+      csv+=`"${q(p)}","${q(e.ref||'')}",${e.date},"${q(e.title)}","${q(e.provider)}","${q((e.speakers||[]).join('; '))}","${q(e.activityType)}","${q(e.format)}",${hrs.toFixed(1)},"${q((e.riba||[]).join('; '))}","${q((e.arb||[]).join('; '))}","${q((e.pdbr||[]).join('; '))}","${e.edi?'Yes':''}","${q(e.notes)}","${q(e.applying)}","${q(e.nextSteps)}","${q(e.evidence)}"\n`;}}
   for(const p of Object.keys(totals).sort())csv+=`"${q(p)}",,,,,,TOTAL,${totals[p].toFixed(1)},,,,,,\n`;
   const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));a.download=`CPD-practice-${year}.csv`;a.click();
 }
@@ -6940,19 +6975,27 @@ function resolveProjInput(val,pool){
   m=pool.find(p=>p.code&&p.code.toLowerCase()===v.toLowerCase());if(m)return m;
   return null;
 }
-window.refreshStageDropdown=function(){
+// The already-on-this-timesheet filter must be WEEK-SCOPED, exactly like the
+// datalist availability check (projsWithAvailableStages -> tsStagesForWeek) and
+// the add handler (doAddProjStageToTS branches on isPastWk). It used to read
+// the GLOBAL palette (getUserStages), which deadlocked past weeks: a stage on
+// the person's current-week palette was filtered out of a past week's dropdown
+// even though that week had no such row — project offered, zero stages listed
+// (Anne-Marie / Jordan, 21 Aug). tsStagesForWeek already resolves to the
+// palette for current/future weeks, so their behaviour is unchanged.
+window.refreshStageDropdown=function(wk,person){
   const pSel=document.getElementById('ts-addproj');
   const sSel=document.getElementById('ts-addstage');
   if(!pSel||!sSel)return;
   const rawVal=pSel.value;
   sSel.innerHTML='<option value="">— Select stage —</option>';
   if(!rawVal)return;
-  const me=viewingUser||cur().name;
+  const me=person||viewingUser||cur().name;
   const pool=st.projects.filter(p=>!p.archived&&(p.phases||[]).some(ph=>ph.active!==false));
   const proj=resolveProjInput(rawVal,pool);
   if(!proj)return;
   const projName=proj.name;
-  const selStgs=getUserStages(me,projName);
+  const selStgs=wk?tsStagesForWeek(wk,me,projName):getUserStages(me,projName);
   const available=(proj.phases||[]).filter(ph=>ph.active!==false&&!selStgs.includes(ph.name));
   available.forEach(ph=>{const o=document.createElement('option');o.value=ph.name;o.textContent=ph.name;sSel.appendChild(o);});
 }
@@ -7092,7 +7135,7 @@ window.saveProjEdit=function(i){
   // rendered into the draft, then read draft-first with the stored value as fallback.
   epHarvest(i);const p0=st.projects[i];
   const gv=(id,fb)=>projEditDraft[id]!==undefined?projEditDraft[id]:(fb??'');
-  const code=String(gv('ec-code',p0.code)).trim(),name=String(gv('ec-name',p0.name)).trim(),clientId=resolveProjClientId(gv('ec-client',p0.clientId||'')),startDate=gv('ec-start',p0.startDate||'')||null,endDate=gv('ec-end',p0.endDate||'')||null;if(!name)return;const oldName=st.projects[i].name;if(name!==oldName&&st.projects.some(p=>p.name===name)){undoToast('A project with that name already exists.');return;}const client=st.clients.find(c=>c.id===clientId);st.projects[i].code=code;st.projects[i].name=name;st.projects[i].clientId=clientId;const contactId2=gv('ec-contact',p0.contactId||'')||null;st.projects[i].clientName=client?.company||null;st.projects[i].contactId=contactId2;st.projects[i].startDate=startDate;st.projects[i].endDate=endDate;st.projects[i].feeNotes=String(gv('ep-notes',p0.feeNotes||''));st.projects[i].projNotes=String(gv('ep-pnotes',p0.projNotes||''));st.projects[i].address=String(gv('ec-address',p0.address||''));st.projects[i].description=String(gv('ep-desc',p0.description||''));st.projects[i].roleDesc=String(gv('ep-roledesc',p0.roleDesc||''));
+  const code=String(gv('ec-code',p0.code)).trim(),name=String(gv('ec-name',p0.name)).trim(),clientId=resolveProjClientId(gv('ec-client',p0.clientId||'')),startDate=gv('ec-start',p0.startDate||'')||null,endDate=gv('ec-end',p0.endDate||'')||null;if(!name)return;const oldName=st.projects[i].name;if(name!==oldName&&st.projects.some(p=>p.name===name)){undoToast('A project with that name already exists.');return;}const client=st.clients.find(c=>c.id===clientId);st.projects[i].code=code;st.projects[i].name=name;st.projects[i].clientId=clientId;const contactId2=gv('ec-contact',p0.contactId||'')||null;st.projects[i].clientName=client?.company||null;st.projects[i].contactId=contactId2;st.projects[i].startDate=startDate;st.projects[i].endDate=endDate;st.projects[i].feeNotes=String(gv('ep-notes',p0.feeNotes||''));st.projects[i].projNotes=String(gv('ep-pnotes',p0.projNotes||''));st.projects[i].address=String(gv('ec-address',p0.address||''));st.projects[i].description=String(gv('ep-desc',p0.description||''));st.projects[i].roleDesc=String(gv('ep-roledesc',p0.roleDesc||''));{const feats=st.projects[i].features||{};for(const f of PROJ_FEATURES)feats[f.k]=false;for(const el of document.querySelectorAll('.ep-feature-'+i+':checked'))feats[el.value]=true;st.projects[i].features=feats;}
   // If project name changed, migrate every store keyed by project name
   if(oldName!==name)renameProjectEverywhere(oldName,name);
   editingProj=null;projEditDraft={};save();render();}
@@ -7269,7 +7312,7 @@ window.projContactPick=function(sel,clientSelId,hintId){
   const o=crmOrg(ct.orgId);
   if(hint&&o)hint.textContent=had?`Company switched to ${o.name} — ${ct.name}'s company.`:`Company set to ${o.name}.`;
 }
-window.addProj=function(){const code=document.getElementById('np-code').value.trim(),name=document.getElementById('np-name').value.trim(),clientId=resolveProjClientId(document.getElementById('np-client').value),startDate=document.getElementById('np-start').value||null,endDate=document.getElementById('np-end').value||null;if(!name)return;if(st.projects.find(p=>p.name===name))return;const client=st.clients.find(c=>c.id===clientId);const phases=[...document.querySelectorAll('#np-phases .phase-tag')].map(t=>({name:t.dataset.name,fee:parseFloat(t.dataset.fee)||null,active:true}));const fmEl=document.getElementById('np-feemode');const feeMode=fmEl&&fmEl.value==='total'?'total':'stage';const tfEl=document.getElementById('np-totalfee');const totalFee=feeMode==='total'?(parseFloat(tfEl&&tfEl.value)||0):0;const contactId=document.getElementById('np-contact')?.value||null;const np={code,name,clientId,clientName:client?.company||null,contactId,startDate,endDate,phases,feeMode,totalFee,rateOverrides:{},feeNotes:'',projNotes:'',address:'',description:'',roleDesc:''};ensureRibaStages(np);st.projects.push(np);st._projAddOpen=false;save();render();}
+window.addProj=function(){const code=document.getElementById('np-code').value.trim(),name=document.getElementById('np-name').value.trim(),clientId=resolveProjClientId(document.getElementById('np-client').value),startDate=document.getElementById('np-start').value||null,endDate=document.getElementById('np-end').value||null;if(!name)return;if(st.projects.find(p=>p.name===name))return;const client=st.clients.find(c=>c.id===clientId);const phases=[...document.querySelectorAll('#np-phases .phase-tag')].map(t=>({name:t.dataset.name,fee:parseFloat(t.dataset.fee)||null,active:true}));const fmEl=document.getElementById('np-feemode');const feeMode=fmEl&&fmEl.value==='total'?'total':'stage';const tfEl=document.getElementById('np-totalfee');const totalFee=feeMode==='total'?(parseFloat(tfEl&&tfEl.value)||0):0;const contactId=document.getElementById('np-contact')?.value||null;const address=document.getElementById('np-address')?.value.trim()||'';const features={};for(const f of PROJ_FEATURES)features[f.k]=false;for(const el of document.querySelectorAll('.np-feature:checked'))features[el.value]=true;const np={code,name,clientId,clientName:client?.company||null,contactId,startDate,endDate,phases,feeMode,totalFee,rateOverrides:{},feeNotes:'',projNotes:'',address,description:'',roleDesc:'',features};ensureRibaStages(np);st.projects.push(np);st._projAddOpen=false;save();render();}
 window.setFeeMode=function(i,mode){st.projects[i].feeMode=mode;save();render();}
 window.updTotalFee=function(i,v){st.projects[i].totalFee=parseFloat(v)||0;save();render();}
 window.addPhToP=function(i){const ph=document.getElementById(`ep-ph-${i}`).value.trim(),fee=parseFloat(document.getElementById(`ep-pf-${i}`).value)||null;if(!ph)return;if(!st.projects[i].phases)st.projects[i].phases=[];if(!st.projects[i].phases.find(p=>p.name===ph))st.projects[i].phases.push({name:ph,fee,active:true});save();render();}
@@ -7290,8 +7333,8 @@ window.updInvoice=function(i,pi,id,field,val){if(!isAdmin())return;const list=in
   else if(field==='paidDate')v.paidDate=val||'';
   save();render();}
 window.delInvoice=function(i,pi,id){if(!isAdmin())return;const list=invListFor(st.projects[i],pi);if(!list)return;const idx=list.findIndex(x=>x.id===id);if(idx<0)return;list.splice(idx,1);save();render();}
-window.addInvExp=function(i,pi,id){if(!isAdmin())return;const list=invListFor(st.projects[i],pi);const v=list&&list.find(x=>x.id===id);if(!v)return;if(!Array.isArray(v.expenses))v.expenses=[];v.expenses.push({id:crmId('ix'),desc:'',amount:0,date:''});save();render();}
-window.updInvExp=function(i,pi,id,xid,field,val){if(!isAdmin())return;const list=invListFor(st.projects[i],pi);const v=list&&list.find(x=>x.id===id);const x=v&&(v.expenses||[]).find(y=>y.id===xid);if(!x)return;if(field==='amount')x.amount=parseFloat(val)||0;else if(field==='desc')x.desc=val||'';else if(field==='date')x.date=val||'';save();render();}
+window.addInvExp=function(i,pi,id){if(!isAdmin())return;const list=invListFor(st.projects[i],pi);const v=list&&list.find(x=>x.id===id);if(!v)return;if(!Array.isArray(v.expenses))v.expenses=[];v.expenses.push({id:crmId('ix'),desc:'',amount:0,date:'',invoiced:false});save();render();}
+window.updInvExp=function(i,pi,id,xid,field,val){if(!isAdmin())return;const list=invListFor(st.projects[i],pi);const v=list&&list.find(x=>x.id===id);const x=v&&(v.expenses||[]).find(y=>y.id===xid);if(!x)return;if(field==='amount')x.amount=parseFloat(val)||0;else if(field==='desc')x.desc=val||'';else if(field==='date')x.date=val||'';else if(field==='invoiced')x.invoiced=!!val;save();render();}
 window.delInvExp=function(i,pi,id,xid){if(!isAdmin())return;const list=invListFor(st.projects[i],pi);const v=list&&list.find(x=>x.id===id);if(!v)return;v.expenses=(v.expenses||[]).filter(y=>y.id!==xid);save();render();}
 window.updPhFee=function(i,pi,v){st.projects[i].phases[pi].fee=parseFloat(v)||null;save();}
 window.addCl=function(){const company=document.getElementById('nc-co').value.trim(),contact=document.getElementById('nc-ct').value.trim(),email=document.getElementById('nc-em').value.trim(),phone=document.getElementById('nc-ph').value.trim();if(!company)return;st.clients.push({id:`c-${Date.now()}`,company,contact,email,phone});save();render();}
