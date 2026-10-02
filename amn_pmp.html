@@ -806,7 +806,7 @@ const STORE_KEY='amn_tracker_v1';
 // The newest build anyone opens records its number in the shared state
 // (st.meta.appBuild); a copy whose APP_BUILD is lower shows a "reopen from
 // your bookmark" banner. APP_VERSION_LABEL is the human-facing date, display only.
-const APP_BUILD=52;
+const APP_BUILD=53;
 const APP_VERSION_LABEL='2 Oct 2026';
 // The portal's one door since the SharePoint copy was retired (Joe, 5 Sep 2026).
 // Both the stale-copy banner and the sidebar tooltip read from these, so the
@@ -886,8 +886,52 @@ function computeDiff(cur,base){
   return any?diff:null;
 }
 
+// Three-way merge of one record (build 53). `base` is the record as we last
+// synced it, `mine` is ours now, `theirs` is what a colleague has since saved.
+// Whatever only one side changed is kept from that side, at the finest grain
+// we can identify safely:
+//   * objects merge key by key;
+//   * lists whose items all carry an id (instalments, connections) merge item
+//     by item, and a removal by either side wins (so an instalment moved to
+//     another stage can never end up in both);
+//   * lists of named items (a project's stages) merge item by item only when
+//     neither side added, removed, renamed or reordered them;
+//   * anything else that both sides changed goes to the later save, as before.
+function sbMergeIdd(a){if(!Array.isArray(a))return false;const seen=new Set();for(const it of a){if(!it||typeof it!=='object'||it.id===undefined||seen.has(String(it.id)))return false;seen.add(String(it.id));}return true;}
+function sbMergeNamed(b,m,t){if(!Array.isArray(b)||!Array.isArray(m)||!Array.isArray(t)||b.length!==m.length||b.length!==t.length)return false;
+  for(let i=0;i<b.length;i++){const x=b[i],y=m[i],z=t[i];if(!x||!y||!z||typeof x!=='object'||typeof y!=='object'||typeof z!=='object'||typeof x.name!=='string'||x.name!==y.name||x.name!==z.name)return false;}return true;}
+function sbMerge3(base,mine,theirs){
+  const jb=JSON.stringify(base),jm=JSON.stringify(mine),jt=JSON.stringify(theirs);
+  if(jm===jb)return theirs;
+  if(jt===jb||jt===jm)return mine;
+  const isObj=x=>!!x&&typeof x==='object'&&!Array.isArray(x);
+  if(isObj(base)&&isObj(mine)&&isObj(theirs)){
+    const out={};
+    for(const k of new Set([...Object.keys(theirs),...Object.keys(mine)])){
+      const inB=k in base,inM=k in mine,inT=k in theirs;
+      if(inM&&inT)out[k]=inB?sbMerge3(base[k],mine[k],theirs[k]):mine[k];
+      else if(inM){if(!inB||JSON.stringify(mine[k])!==JSON.stringify(base[k]))out[k]=mine[k];}   // they removed it: kept only if we changed or added it
+      else{if(!inB||JSON.stringify(theirs[k])!==JSON.stringify(base[k]))out[k]=theirs[k];}        // we removed it: kept only if they changed or added it
+    }
+    return out;
+  }
+  if(sbMergeIdd(base)&&sbMergeIdd(mine)&&sbMergeIdd(theirs)){
+    const by=a=>{const o={};for(const it of a)o[String(it.id)]=it;return o;};
+    const B=by(base),M=by(mine),T=by(theirs),out=[];
+    for(const it of theirs){const id=String(it.id);
+      if(id in M)out.push(id in B?sbMerge3(B[id],M[id],it):M[id]);
+      else if(!(id in B))out.push(it);            // they added it
+    }                                             // in base but not ours: we removed it, and a removal wins
+    for(const it of mine){const id=String(it.id);if(!(id in T)&&!(id in B))out.push(it);}   // we added it (in base but not theirs: they removed it)
+    return out;
+  }
+  if(sbMergeNamed(base,mine,theirs))return base.map((b,i)=>sbMerge3(b,mine[i],theirs[i]));
+  return mine;
+}
 // Apply a local diff on top of (a copy of) someone else's committed state.
-function applyDiff(target,diff){
+// With `base` (the last-synced state) a record both sides changed is merged
+// inside, not replaced; without it the behaviour is the old one.
+function applyDiff(target,diff,base){
   const out=JSON.parse(JSON.stringify(target||{}));
   for(const k in diff.replace)out[k]=diff.replace[k];
   for(const k in diff.maps){
@@ -901,7 +945,11 @@ function applyDiff(target,diff){
     const a=diff.arrays[k];
     const removedSet=new Set(a.removed.map(String));
     out[k]=out[k].filter(it=>!removedSet.has(String(sbIdOf(k,it))));
-    out[k]=out[k].map(it=>{const id=String(sbIdOf(k,it));return a.changed[id]!==undefined?a.changed[id]:(a.changed[sbIdOf(k,it)]!==undefined?a.changed[sbIdOf(k,it)]:it);});
+    const bById={};if(base&&Array.isArray(base[k]))for(const it of base[k])bById[String(sbIdOf(k,it))]=it;
+    out[k]=out[k].map(it=>{const id=String(sbIdOf(k,it));const mine=a.changed[id]!==undefined?a.changed[id]:a.changed[sbIdOf(k,it)];
+      if(mine===undefined)return it;
+      if(bById[id]!==undefined){try{return JSON.parse(JSON.stringify(sbMerge3(bById[id],mine,it)));}catch(e){return mine;}}
+      return mine;});
     const present=new Set(out[k].map(it=>String(sbIdOf(k,it))));
     for(const it of a.added)if(!present.has(String(sbIdOf(k,it))))out[k].push(it);
   }
@@ -1197,7 +1245,7 @@ async function sbPerformSave(){
       continue; // conflict: someone created it concurrently — merge normally next pass
     }
     baseRev=rr[0].rev||0;
-    body=applyDiff(rr[0].data||{},diff);
+    body=applyDiff(rr[0].data||{},diff,_sbBaseline);
   }
   throw new Error('Could not save after repeated conflicts');
 }
@@ -1281,7 +1329,7 @@ let wkOff=0,projTempFilter='',homeHealthIdx=0,healthProj=null,healthSection='fin
 // input values (harvested on every section toggle so collapsing never loses text).
 let projEditSec={},projEditDraft={};
 const EP_FIELDS={details:['ec-code','ec-name','ec-client','ec-contact','ec-start','ec-end','ec-address','ep-desc','ep-roledesc'],pnotes:['ep-pnotes'],feenotes:['ep-notes']};
-function epHarvest(i){if(i===null||i===undefined)return;for(const ids of Object.values(EP_FIELDS))for(const id of ids){const el=document.getElementById(id+'-'+i);if(el)projEditDraft[id]=el.value;}}
+function epHarvest(i){if(i===null||i===undefined)return;for(const ids of Object.values(EP_FIELDS))for(const id of ids){const el=document.getElementById(id+'-'+i);if(el&&fkElDirty(el))projEditDraft[id]=el.value;}}
 function epv(id,fallback){return projEditDraft[id]!==undefined?projEditDraft[id]:(fallback??'');}
 window.epTog=function(key){epHarvest(editingProj);projEditSec[key]=!projEditSec[key];render();}
 // ── Resource planner (Forecast tab) state ──────────────────────────────────────
@@ -3349,7 +3397,8 @@ function fkRestore(snap){
 // Someone else's change has arrived. Never rebuild the page under a person who
 // is typing or who has typing waiting in a form; the change is already in
 // memory and shows at the next render.
-function fkBusy(){try{for(const c of document.querySelectorAll('.modal-overlay,.note-popover,.mob-sheet,[data-fk]'))if(fkDirtyIn(c))return true;}catch(e){}return false;}
+function fkBusy(){try{if(cpdEditing!==null&&cpdSpk){const _e=cpdEditing==='new'?null:st.cpd.find(x=>x.id===cpdEditing);if(JSON.stringify(cpdSpk)!==JSON.stringify((_e&&_e.speakers)||[]))return true;}}catch(e){}
+  try{for(const c of document.querySelectorAll('.modal-overlay,.note-popover,.mob-sheet,[data-fk]'))if(fkDirtyIn(c))return true;}catch(e){}return false;}
 function fkBgRender(){if(isTyping()||fkBusy())return;_fkBg=true;render();}
 function fkTick(id,idle){
   try{const el=document.getElementById(id);if(!el)return;el.textContent='Saved ✓';el.classList.add('on');
@@ -3359,7 +3408,7 @@ function fkTick(id,idle){
 function fkRootOf(el){try{return el&&el.closest?(el.closest('.modal-overlay')||el.closest('.note-popover')||el.closest('.mob-sheet')||el):el;}catch(e){return el;}}
 function fkTouch(){_fkJust=true;try{setTimeout(()=>{_fkJust=false;},0);}catch(e){_fkJust=false;}}
 function fkAskOpen(root,fn){_fkAsk={root,fn};renderUnsavedModal();}
-window.fkClose=function(el,fn){const root=fkRootOf(el);if(root&&fkDirtyIn(root)){fkAskOpen(root,fn);return;}window[fn]();};
+window.fkClose=function(el,fn){const root=fkRootOf(el);if(root&&(fkDirtyIn(root)||(fn==='cpdCancel'&&fkBusy()))){fkAskOpen(root,fn);return;}window[fn]();};
 function fkPopClose(id,fn){const r=document.getElementById(id);if(r&&fkDirtyIn(r)){fkAskOpen(r,fn);return;}window[fn]();}
 window.fkAskKeep=function(){_fkAsk=null;fkTouch();renderUnsavedModal();};
 window.fkAskDiscard=function(){const a=_fkAsk;_fkAsk=null;fkTouch();renderUnsavedModal();if(a&&typeof window[a.fn]==='function')window[a.fn]();};
@@ -3419,12 +3468,16 @@ function epCommit(i,names,quiet){
   p.startDate=gv('ec-start',p.startDate||'')||null;p.endDate=gv('ec-end',p.endDate||'')||null;
   p.feeNotes=String(gv('ep-notes',p.feeNotes||''));p.projNotes=String(gv('ep-pnotes',p.projNotes||''));
   p.address=String(gv('ec-address',p.address||''));p.description=String(gv('ep-desc',p.description||''));p.roleDesc=String(gv('ep-roledesc',p.roleDesc||''));
-  try{const boxes=document.querySelectorAll('.ep-feature-'+i);
-    if(boxes.length){const feats=p.features||{};for(const f of PROJ_FEATURES)feats[f.k]=false;for(const el of boxes)if(el.checked)feats[el.value]=true;p.features=feats;}}catch(e){}
+  try{const boxes=[...document.querySelectorAll('.ep-feature-'+i)];
+    if(boxes.length&&boxes.some(fkElDirty)){const feats=p.features||{};for(const f of PROJ_FEATURES)feats[f.k]=false;for(const el of boxes)if(el.checked)feats[el.value]=true;p.features=feats;}}catch(e){}
   if(renamed)renameProjectEverywhere(oldName,p.name);
-  if(!renamed&&JSON.stringify(p)===before)return false;
+  if(!renamed&&JSON.stringify(p)===before){if(names)for(const k of Object.keys(projEditDraft))delete projEditDraft[k];return false;}
   save();
-  try{const root=document.querySelector('[data-fk="ep:'+i+'"]');if(root)fkSettle(root,el=>epAutoTarget(el,i));}catch(e){}
+  // What was written is now the baseline; the draft keeps only a number or
+  // name still being typed (those wait until their field is left).
+  const isNm=id=>/^ec-(code|name)(-\d+)?$/.test(id||'');
+  try{const root=document.querySelector('[data-fk="ep:'+i+'"]');if(root)fkSettle(root,el=>epAutoTarget(el,i)&&(names||!isNm(el.id)));}catch(e){}
+  for(const k of Object.keys(projEditDraft))if(names||!isNm(k))delete projEditDraft[k];
   fkTick('ep-saved-'+i,EP_IDLE);
   return true;
 }
@@ -3474,9 +3527,13 @@ function crmHarvestOrgForm(o,quiet){
   let name=(val('crm-o-name')||'').trim();
   if(!name){name=o.name;if(!quiet)undoToast('The company needs a name, so the previous name has been kept.');}
   else if(st.crmOrgs.some(x=>x.name.trim().toLowerCase()===name.toLowerCase()&&x.id!==o.id)){name=o.name;if(!quiet)undoToast('A company with that name already exists, so the previous name has been kept.');}
-  const sectors=[...document.querySelectorAll('.crm-o-sec:checked')].map(x=>x.value);
-  Object.assign(o,{name,website:val('crm-o-web').trim(),notes:val('crm-o-notes'),sectors});
-  const rEl=document.getElementById('crm-o-rating');if(rEl&&rEl.value)o.rating=rEl.value;
+  const ch=id=>{const e=document.getElementById(id);return !!e&&fkElDirty(e);};
+  if(!ch('crm-o-name'))name=o.name;
+  o.name=name;
+  if(ch('crm-o-web'))o.website=val('crm-o-web').trim();
+  if(ch('crm-o-notes'))o.notes=val('crm-o-notes');
+  try{const boxes=[...document.querySelectorAll('.crm-o-sec')];if(boxes.some(fkElDirty))o.sectors=boxes.filter(x=>x.checked).map(x=>x.value);}catch(e){}
+  if(ch('crm-o-rating')&&val('crm-o-rating'))o.rating=val('crm-o-rating');
   if(o.clientId){const cl=st.clients.find(c=>c.id===o.clientId);if(cl&&cl.company!==name){cl.company=name;st.projects.forEach(p=>{if(p.clientId===cl.id)p.clientName=name;});}}
   return true;
 }
@@ -3485,9 +3542,15 @@ function crmHarvestEventForm(e){
   if(!document.getElementById('crm-e-name'))return false;
   const timeSig=()=>JSON.stringify([e.start,e.end,e.staff,e.hoursPerDay,e.evening]);
   const t0=timeSig();
-  const staff=[...document.querySelectorAll('.crm-e-staff:checked')].map(x=>x.value);
-  const evEl=document.getElementById('crm-e-evening');
-  Object.assign(e,{name:(val('crm-e-name')||'').trim()||e.name,start:val('crm-e-start')||null,end:val('crm-e-end')||null,link:val('crm-e-link').trim(),notes:val('crm-e-notes'),staff,hoursPerDay:parseFloat(val('crm-e-hours'))||7.5,evening:!!(evEl&&evEl.checked)});
+  const ch=id=>{const x=document.getElementById(id);return !!x&&fkElDirty(x);};
+  if(ch('crm-e-name')){const n=(val('crm-e-name')||'').trim();if(n)e.name=n;}
+  if(ch('crm-e-start'))e.start=val('crm-e-start')||null;
+  if(ch('crm-e-end'))e.end=val('crm-e-end')||null;
+  if(ch('crm-e-link'))e.link=val('crm-e-link').trim();
+  if(ch('crm-e-notes'))e.notes=val('crm-e-notes');
+  if(ch('crm-e-hours'))e.hoursPerDay=parseFloat(val('crm-e-hours'))||7.5;
+  if(ch('crm-e-evening'))e.evening=!!document.getElementById('crm-e-evening').checked;
+  try{const boxes=[...document.querySelectorAll('.crm-e-staff')];if(boxes.some(fkElDirty))e.staff=boxes.filter(x=>x.checked).map(x=>x.value);}catch(x){}
   if(timeSig()!==t0)applyEventTime(e);
   return true;
 }
@@ -7843,7 +7906,7 @@ function renderCpdModal(){
           <div>${L('Provider')}<input type="text" id="cpd-provider" value="${escAttr(e.provider||'')}" placeholder="e.g. RIBA Learning Academy — recorded for RIBA" style="width:100%;box-sizing:border-box" ${dis}/></div>
         </div>
         <div style="margin-bottom:14px">${L('Speakers')}
-          <div id="cpd-speakers" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:${dis?'0':'8px'}">${(e.speakers||[]).map(sp=>`<span class="phase-tag" data-name="${escAttr(sp)}">${escAttr(sp)}${dis?'':` <span style=\"cursor:pointer;opacity:.5\" onclick=\"this.parentElement.remove()\">×</span>`}</span>`).join('')}${(e.speakers||[]).length?'':(dis?'<span style="font-size:11px;color:var(--grey);font-style:italic">None recorded</span>':'')}</div>
+          <div id="cpd-speakers" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:${dis?'0':'8px'}">${cpdSpkList(e).map((sp,k)=>`<span class="phase-tag" data-name="${escAttr(sp)}">${escAttr(sp)}${dis?'':` <span style=\"cursor:pointer;opacity:.5\" onclick=\"cpdRmSpeaker(${k})\">×</span>`}</span>`).join('')}${cpdSpkList(e).length?'':(dis?'<span style="font-size:11px;color:var(--grey);font-style:italic">None recorded</span>':'')}</div>
           ${dis?'':`<div style="display:flex;gap:8px"><input type="text" id="cpd-speaker-new" placeholder="Type a speaker's name and press Add — as many as needed" style="flex:1;font-size:12px"/><button class="btn btn-primary btn-sm" onclick="cpdAddSpeaker()">Add</button></div>`}
         </div>
         <div style="display:grid;grid-template-columns:1fr 0.7fr 1.3fr 1fr;gap:14px;margin-bottom:16px">
@@ -7886,21 +7949,27 @@ function renderCpdModal(){
     </div>
   </div>`;
 }
+// Build 53: the speakers being edited are held here, not only as tags on
+// screen, so a redraw of the form (a colleague's change arriving) keeps them.
+let cpdSpk=null;
+function cpdSpkList(e){if(!cpdSpk)cpdSpk=((e&&e.speakers)||[]).slice();return cpdSpk;}
 window.cpdAddSpeaker=function(){
   const inp=document.getElementById('cpd-speaker-new');if(!inp)return;
   const nm=(inp.value||'').trim();if(!nm)return;
-  const list=document.getElementById('cpd-speakers');if(!list)return;
-  const tag=document.createElement('span');tag.className='phase-tag';tag.dataset.name=nm;
-  tag.innerHTML=`${escAttr(nm)} <span style=\"cursor:pointer;opacity:.5\" onclick=\"this.parentElement.remove()\">×</span>`;
-  list.appendChild(tag);inp.value='';inp.focus();
+  if(!cpdSpk)cpdSpk=[];
+  if(!cpdSpk.includes(nm))cpdSpk.push(nm);
+  inp.value='';
+  render();
+  const again=document.getElementById('cpd-speaker-new');if(again&&again.focus)again.focus();
 }
+window.cpdRmSpeaker=function(k){if(!cpdSpk)return;cpdSpk.splice(k,1);render();}
 window.cpdTypeChanged=function(t){const f=document.getElementById('cpd-format');if(f)f.value=CPD_INFORMAL_TYPES.includes(t)?'Informal':'Structured';}
 window.cpdSetView=v=>{cpdView=v;render();}
 window.cpdSetYear=v=>{cpdYearFilter=parseInt(v,10);render();}
 window.cpdSetPerson=v=>{cpdPersonFilter=v;render();}
-window.cpdOpenNew=()=>{cpdEditing='new';render();}
-window.cpdOpenEdit=(id)=>{cpdEditing=id;render();}
-window.cpdCancel=()=>{cpdEditing=null;render();}
+window.cpdOpenNew=()=>{cpdSpk=null;cpdEditing='new';render();}
+window.cpdOpenEdit=(id)=>{cpdSpk=null;cpdEditing=id;render();}
+window.cpdCancel=()=>{cpdSpk=null;cpdEditing=null;render();}
 window.doSaveCPD=function(){
   const me=cur().name;
   const isNew=cpdEditing==='new';
@@ -7918,7 +7987,8 @@ window.doSaveCPD=function(){
     const edi=[...document.querySelectorAll('.cpd-edi:checked')].length>0;
     const atts=[...document.querySelectorAll('.cpd-att:checked')].map(x=>x.value);
     if(!atts.length){undoToast('Tick at least one attendee.');return;}
-    const speakers=[...document.querySelectorAll('#cpd-speakers .phase-tag')].map(t=>t.dataset.name).filter(Boolean);
+    const speakers=(cpdSpk||[...document.querySelectorAll('#cpd-speakers .phase-tag')].map(t=>t.dataset.name).filter(Boolean)).slice();
+    {const _n=(val('cpd-speaker-new')||'').trim();if(_n&&!speakers.includes(_n))speakers.push(_n);}   // typed but not added
     const base={date,title,provider:val('cpd-provider')||'',speakers,durationHours:hours,riba,arb,pdbr,edi,attendees:atts,notes:val('cpd-notes')||'',applying:val('cpd-applying')||'',nextSteps:val('cpd-nextsteps')||'',activityType:val('cpd-type')||'Course / seminar',format:val('cpd-format')||'Structured',evidence:val('cpd-evidence')||''};
     if(isNew){
       e={id:'cpd'+Date.now()+Math.floor(Math.random()*1000),...base,reflections:{},createdBy:me,timeWrites:[]};
@@ -10344,20 +10414,26 @@ function crmHarvestContactForm(c,final){
   const el=id=>document.getElementById(id);
   if(!el('crm-c-name'))return false;                 // modal not rendered
   const val=id=>{const e=el(id);return e?e.value:'';};
-  // A blank name keeps the stored one (build 52: the card saves as it goes).
-  const name=(val('crm-c-name')||'').trim()||c.name;if(!name)return false;
+  // Build 53: only what the person changed on this card is written, so a card
+  // opened before a colleague's edit cannot put the old values back.
+  const ch=id=>{const e=el(id);return !!e&&fkElDirty(e);};
   const origOrgId=c.orgId;
-  // The company box is ADDITIVE now (it adds to c.orgIds on change); a value
-  // still sitting in it at save time is a company typed but not yet committed.
+  // The company box is ADDITIVE (it adds to c.orgIds on change); a value still
+  // sitting in it at the final commit is a company typed but not yet added.
   const orgName=final===false?'':(val('crm-c-org')||'').trim();
   if(orgName){fkClear('crm-c-org');const extra=crmFindOrCreateOrgByName(orgName);if(extra){if(!Array.isArray(c.orgIds))c.orgIds=c.orgId?[c.orgId]:[];if(!c.orgIds.includes(extra.id))c.orgIds.push(extra.id);}}
   const org=crmContactOrgIds(c).length?crmOrg(crmContactOrgIds(c)[0]):null;
-  const sectors=[...document.querySelectorAll('.crm-c-sec:checked')].map(x=>x.value);
-  Object.assign(c,{name,orgId:org?org.id:null,role:val('crm-c-role').trim(),type:val('crm-c-type').trim(),email:val('crm-c-email').trim(),phone:val('crm-c-phone').trim(),mobile:val('crm-c-mobile').trim(),linkedin:val('crm-c-linkedin').trim(),owner:val('crm-c-owner')||c.owner,rating:val('crm-c-rating')||'warm',sectors});
+  const upd={orgId:org?org.id:null};
+  if(ch('crm-c-name')){const n=(val('crm-c-name')||'').trim();if(n)upd.name=n;}   // a blank name keeps the stored one
+  for(const[id,key]of[['crm-c-role','role'],['crm-c-type','type'],['crm-c-email','email'],['crm-c-phone','phone'],['crm-c-mobile','mobile'],['crm-c-linkedin','linkedin']])if(ch(id))upd[key]=val(id).trim();
+  if(ch('crm-c-owner')&&val('crm-c-owner'))upd.owner=val('crm-c-owner');
+  if(ch('crm-c-rating'))upd.rating=val('crm-c-rating')||'warm';
+  try{const boxes=[...document.querySelectorAll('.crm-c-sec')];if(boxes.some(fkElDirty))upd.sectors=boxes.filter(x=>x.checked).map(x=>x.value);}catch(e){}
+  Object.assign(c,upd);
   normCrmContact(c);
-  // Company website lives on the org. Write the typed value through, but never
-  // clobber a DIFFERENT company's existing website if the user switched company.
-  if(org){const webEl=el('crm-c-web');if(webEl&&(org.id===origOrgId||!org.website))org.website=(webEl.value||'').trim();}
+  // Company website lives on the org. Write a typed value through, but never
+  // clobber a DIFFERENT company's existing website if the company changed.
+  if(org&&ch('crm-c-web')&&(org.id===origOrgId||!org.website))org.website=(val('crm-c-web')||'').trim();
   return true;
 }
 window.crmSaveContact=function(){
@@ -11108,16 +11184,59 @@ window.mobConvDel=function(id){
   if(mobConvArm!==id){mobConvArm=id;render();return;}
   mobConvArm=null;crmDeleteInteraction(id);
 }
-window.mobCrmSaveContact=function(){
-  const c=st.crmContacts.find(x=>x.id===(mobSheet&&mobSheet.id));if(!c)return;
-  const v=id=>((document.getElementById(id)||{}).value||'').trim();
-  const name=v('mob-ec-name');if(!name){undoToast('A contact needs at least a name.');return;}
-  const orgName=v('mob-ec-org');
-  const org=orgName?crmFindOrCreateOrgByName(orgName):null;
-  if(st.crmContacts.some(x=>x.id!==c.id&&x.name.trim().toLowerCase()===name.toLowerCase()&&(org?crmContactAtOrg(x,org.id):!crmContactOrgIds(x).length))){undoToast('That person is already in the CRM at that company.');return;}
-  Object.assign(c,{name,orgId:org?org.id:null,role:v('mob-ec-role'),type:v('mob-ec-type'),email:v('mob-ec-email'),phone:v('mob-ec-phone'),mobile:v('mob-ec-mobile'),linkedin:v('mob-ec-li')});
-  save();mobSheet=null;undoToast('Contact updated.');render();
+// Build 53: the phone's contact sheet saves as you go, like the desktop card.
+// Only the fields that were changed are written. Returns false when a change
+// could not be applied (the toast says why), true otherwise.
+let _mobEcT=null;
+function mobEcCommit(quiet){
+  const c=st.crmContacts.find(x=>x.id===(mobSheet&&mobSheet.id));if(!c)return false;
+  const g=id=>document.getElementById(id);
+  const v=id=>((g(id)||{}).value||'').trim();
+  const ch=id=>{const e=g(id);return !!e&&fkElDirty(e);};
+  const before=JSON.stringify(c);
+  let name=c.name,okAll=true;
+  if(ch('mob-ec-name')){const n=v('mob-ec-name');if(n)name=n;else{okAll=false;if(!quiet)undoToast('A contact needs a name, so the previous name has been kept.');}}
+  let orgId=c.orgId,orgIds=crmContactOrgIds(c).slice();
+  if(ch('mob-ec-org')){const on=v('mob-ec-org');const org=on?crmFindOrCreateOrgByName(on):null;
+    if(org){if(!orgIds.includes(org.id))orgIds=[org.id,...orgIds.filter(x=>x!==c.orgId)];orgId=org.id;}
+    else{orgIds=orgIds.filter(x=>x!==c.orgId);orgId=orgIds[0]||null;}}
+  if(st.crmContacts.some(x=>x.id!==c.id&&x.name.trim().toLowerCase()===name.toLowerCase()&&(orgId?crmContactAtOrg(x,orgId):!crmContactOrgIds(x).length))){
+    okAll=false;name=c.name;orgId=c.orgId;orgIds=crmContactOrgIds(c).slice();
+    if(!quiet)undoToast('That person is already in the CRM at that company, so the name and company were left as they were.');
+  }
+  const upd={name,orgId,orgIds};
+  for(const[id,key]of[['mob-ec-role','role'],['mob-ec-type','type'],['mob-ec-email','email'],['mob-ec-phone','phone'],['mob-ec-mobile','mobile'],['mob-ec-li','linkedin']])if(ch(id))upd[key]=v(id);
+  Object.assign(c,upd);normCrmContact(c);
+  if(JSON.stringify(c)!==before){
+    c.updatedBy=cur().name;c.updatedAt=crmTodayISO();save();
+    if(okAll){try{const sh=document.querySelector('.mob-sheet');if(sh)fkSettle(sh,e=>/^mob-ec-/.test(e.id||''));}catch(e){}}
+    fkTick('mob-ec-saved','Changes save as you go');
+  }
+  return okAll;
 }
+window.mobEcAuto=function(ev){if(!mobSheet||mobSheet.kind!=='editcontact'||!/^mob-ec-/.test((ev.target&&ev.target.id)||''))return;if(_mobEcT){clearTimeout(_mobEcT);_mobEcT=null;}mobEcCommit(false);};
+window.mobEcAutoSoon=function(ev){
+  const t=ev.target;if(!mobSheet||mobSheet.kind!=='editcontact'||!t||!/^mob-ec-/.test(t.id||'')||t.tagName==='SELECT'||t.id==='mob-ec-name'||t.id==='mob-ec-org')return;
+  if(_mobEcT)clearTimeout(_mobEcT);
+  _mobEcT=setTimeout(()=>{_mobEcT=null;if(mobSheet&&mobSheet.kind==='editcontact')mobEcCommit(true);},1000);
+};
+// The sheet's button, now "Done": commit and close.
+window.mobCrmSaveContact=function(){
+  if(!st.crmContacts.some(x=>x.id===(mobSheet&&mobSheet.id)))return;
+  if(_mobEcT){clearTimeout(_mobEcT);_mobEcT=null;}
+  if(!mobEcCommit(false))return;      // something could not be applied: stay, the toast says why
+  mobSheet=null;render();
+}
+// A tap outside a sheet. The two sheets that edit something existing save and
+// close; every other sheet asks before dropping typing.
+window.mobSheetBack=function(el){
+  const k=mobSheet&&mobSheet.kind;
+  if(k==='editcontact'){if(_mobEcT){clearTimeout(_mobEcT);_mobEcT=null;}mobEcCommit(false);mobSheet=null;render();return;}
+  if(k==='editconv'){const n=document.getElementById('mob-ce-note'),d=document.getElementById('mob-ce-date');
+    if(((n&&fkElDirty(n))||(d&&fkElDirty(d)))&&(n.value||'').trim()){mobCrmSaveConv();return;}
+    mobSheetClose();return;}
+  fkClose(el,'mobSheetClose');
+};
 window.mobCrmCreate=function(){
   const v=id=>((document.getElementById(id)||{}).value||'').trim();
   const name=v('mob-nc-name');if(!name){undoToast('A contact needs at least a name.');return;}
@@ -11343,6 +11462,7 @@ function buildMobSheet(){
     const c=st.crmContacts.find(x=>x.id===mobSheet.id);
     if(!c)inner=`<h3>Edit contact</h3><div class="mob-mut">That contact is no longer there.</div>`;
     else inner=`<h3>Edit contact</h3>
+    <div class="mob-mut" id="mob-ec-saved" style="margin:-6px 0 12px">Changes save as you go</div>
     <div class="mob-field"><label>Name</label><input id="mob-ec-name" value="${escAttr(c.name)}"/></div>
     <div class="mob-field"><label>Company</label><input id="mob-ec-org" list="mob-orgs2" value="${escAttr(c.orgId?crmOrgName(c.orgId):'')}" placeholder="matches existing as you type"/><datalist id="mob-orgs2">${st.crmOrgs.map(o=>`<option value="${escAttr(o.name)}">`).join('')}</datalist></div>
     <div class="mob-field"><label>Role</label><select id="mob-ec-type"><option value="">—</option>${crmRoles().map(r=>`<option${c.type===r?' selected':''}>${escAttr(r)}</option>`).join('')}</select></div>
@@ -11351,7 +11471,7 @@ function buildMobSheet(){
     <div class="mob-field"><label>Phone</label><input id="mob-ec-phone" type="tel" value="${escAttr(c.phone||'')}"/></div>
     <div class="mob-field"><label>Mobile</label><input id="mob-ec-mobile" type="tel" value="${escAttr(c.mobile||'')}"/></div>
     <div class="mob-field"><label>LinkedIn</label><input id="mob-ec-li" value="${escAttr(c.linkedin||'')}" placeholder="profile URL"/></div>
-    <button class="mob-btn" onclick="mobCrmSaveContact()">Save</button>`;
+    <button class="mob-btn" onclick="mobCrmSaveContact()">Done</button>`;
   }else if(k==='newevent'){
     inner=`<h3>New event</h3>
     <div class="mob-field"><label>Name</label><input id="mob-ne-name" placeholder="e.g. Futurebuild London"/></div>
@@ -11420,7 +11540,7 @@ function buildMobSheet(){
     inner+=`<div class="mob-sec"><div class="mc-title">Events</div>${evs.length?evs.map(e=>`<div class="ms-row"><b>${escAttr(e.name)}</b>${(e.staff||[]).length?` · ${e.staff.map(n=>escAttr(n.split(' ')[0])).join(', ')}`:''}<div><button class="mob-nbtn sec" style="margin-top:4px" onclick="mobSheetOpen('ev','${jsq(e.id)}')">Open event</button></div></div>`).join(''):'<div class="mob-mut">None.</div>'}</div>`;
     inner+=`<div class="mob-sec"><div class="mc-title">Away</div>${away.length?away.map(r=>`<div class="ms-row">${escAttr(r.person)} — ${escAttr(mobLvType(r))}${(r.halfDays&&r.halfDays[iso])?' (half day)':''}${r.status==='pending'?' <span class="mob-chip warn">pending</span>':''}</div>`).join(''):'<div class="mob-mut">Everyone\u2019s in.</div>'}</div>`;
   }
-  return `<div class="mob-sheet-back" onclick="fkClose(this.nextElementSibling,'mobSheetClose')"></div><div class="mob-sheet">${inner}</div>`;
+  return `<div class="mob-sheet-back" onclick="mobSheetBack(this.nextElementSibling)"></div><div class="mob-sheet" onchange="mobEcAuto(event)" oninput="mobEcAutoSoon(event)">${inner}</div>`;
 }
 
 init().catch(e=>{console.error("Init failed:",e);_appReady=true;render();});
