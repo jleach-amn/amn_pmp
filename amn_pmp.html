@@ -78,6 +78,8 @@ body{font-family:'Figtree',sans-serif;font-size:13px;color:var(--blk);background
 .inv-stat .lbl{font-size:9px;letter-spacing:.07em;text-transform:uppercase;color:var(--dkgrey);font-weight:600;margin-bottom:2px}
 .inv-stat .val{font-size:15px;font-weight:700;font-family:'Figtree',sans-serif;letter-spacing:-.01em}
 .inv-stat .sub{font-size:10px;font-weight:600;margin-top:1px}
+@keyframes invFlash{0%{background:#FFF1CC;box-shadow:0 0 0 2px var(--accent)}100%{background:#fff;box-shadow:0 0 0 0 rgba(0,0,0,0)}}
+.inv-flash{animation:invFlash 1.8s ease-out}
 .filt-group{display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:6px 10px;border:1px solid var(--mid);border-radius:999px;background:var(--wht)}
 .filt-group-label{font-size:10px;letter-spacing:.06em;text-transform:uppercase;font-weight:700;color:var(--grey);margin-right:2px}
 .export-bar{display:flex;justify-content:flex-end;align-items:center;gap:10px;margin-top:12px}
@@ -546,6 +548,9 @@ input::placeholder,textarea::placeholder{color:var(--grey);opacity:.85}input[typ
    viewport so Save can never scroll out of reach. */
 .ep-actionbar{position:sticky;bottom:0;z-index:5;display:flex;gap:8px;align-items:center;margin-top:14px;padding:12px 14px;background:rgba(255,255,255,.97);border-top:1px solid var(--mid);border-radius:0 0 var(--r-lg) var(--r-lg);box-shadow:0 -6px 18px rgba(38,34,30,.07)}
 .ep-dirty-note{font-size:11px;color:var(--warn);font-weight:600}
+.fk-saved{font-size:11px;color:var(--dkgrey);font-weight:500;transition:color .2s}
+.fk-saved.on{color:var(--ok);font-weight:700}
+.crm-byline{font-size:10.5px;color:var(--dkgrey);margin:-8px 0 14px}
 .modal-box{background:#fff;width:320px;max-width:90vw;border-radius:var(--r-xl);box-shadow:0 16px 48px rgba(38,34,30,.28)}
 .modal-box input[type=text],.modal-box input[type=number]{width:100%;font-size:12px}
 /* Note indicator on a bar */
@@ -801,8 +806,8 @@ const STORE_KEY='amn_tracker_v1';
 // The newest build anyone opens records its number in the shared state
 // (st.meta.appBuild); a copy whose APP_BUILD is lower shows a "reopen from
 // your bookmark" banner. APP_VERSION_LABEL is the human-facing date, display only.
-const APP_BUILD=50;
-const APP_VERSION_LABEL='17 Sep 2026';
+const APP_BUILD=52;
+const APP_VERSION_LABEL='2 Oct 2026';
 // The portal's one door since the SharePoint copy was retired (Joe, 5 Sep 2026).
 // Both the stale-copy banner and the sidebar tooltip read from these, so the
 // address is written once. If Pages ever moves, change it here only.
@@ -1048,6 +1053,7 @@ window.doUndo=function(){
   _redoStack.push(step);
   _undoBase=snapshotState();
   noUndo(save);
+  _fkSkip=true;projEditDraft={};
   render();
   undoToast(res.skipped?(res.applied?`Undone: ${step.label} — ${res.skipped} change${res.skipped===1?'':'s'} kept (edited by someone else since)`:`Couldn't undo — ${step.label} was changed by someone else since`):`Undone: ${step.label}`);
 }
@@ -1060,6 +1066,7 @@ window.doRedo=function(){
   _undoStack.push(step);
   _undoBase=snapshotState();
   noUndo(save);
+  _fkSkip=true;projEditDraft={};
   render();
   undoToast(res.skipped?(res.applied?`Redone: ${step.label} — ${res.skipped} change${res.skipped===1?'':'s'} kept (edited by someone else since)`:`Couldn't redo — ${step.label} was changed by someone else since`):`Redone: ${step.label}`);
 }
@@ -1206,12 +1213,12 @@ async function sbFlush(){
   _sbSaving=true;updateSyncBadge('saving');
   try{
     const merged=await sbPerformSave();
-    if(merged){adoptRemoteState(merged);if(!isTyping())render();}
-    if(_sbSaveError){_sbSaveError=false;if(!isTyping())render();}
+    if(merged){adoptRemoteState(merged);fkBgRender();}
+    if(_sbSaveError){_sbSaveError=false;fkBgRender();}
     updateSyncBadge('saved');
   }catch(e){
     console.error('Supabase save error:',e);
-    if(!_sbSaveError){_sbSaveError=true;if(!isTyping())render();}
+    if(!_sbSaveError){_sbSaveError=true;fkBgRender();}
     updateSyncBadge('error');
   }finally{
     _sbSaving=false;
@@ -1254,7 +1261,7 @@ async function sbCheckRemote(){
     _sbRev=rr[0].rev||0;
     adoptRemoteState(rr[0].data||{});
     _sbBaseline=snapshotState();
-    if(!isTyping())render();
+    fkBgRender();
   }catch(e){}
 }
 
@@ -1978,8 +1985,8 @@ function renderLeaveModal(){
       </div>
       <div style="font-size:10px;color:var(--grey);margin-top:8px">Weekends and bank holidays don't count. Only Annual leave uses the allowance — unpaid leave is unlimited but discretionary.</div>`;
   }
-  el.innerHTML=`<div class="modal-overlay" onclick="if(event.target===this&&window._ovMd===this)closeLeaveModal()"><div style="background:#fff;border-radius:var(--r-lg);width:480px;max-width:94vw;box-shadow:0 8px 30px rgba(38,34,30,.25)">
-    <div class="note-popover-hdr"><span>${title}</span><button onclick="closeLeaveModal()" style="background:none;border:none;cursor:pointer;font-size:14px;font-weight:700;color:var(--dkgrey)">×</button></div>
+  el.innerHTML=`<div class="modal-overlay" onclick="if(event.target===this&&window._ovMd===this)fkClose(this,'closeLeaveModal')"><div style="background:#fff;border-radius:var(--r-lg);width:480px;max-width:94vw;box-shadow:0 8px 30px rgba(38,34,30,.25)">
+    <div class="note-popover-hdr"><span>${title}</span><button onclick="fkClose(this,'closeLeaveModal')" style="background:none;border:none;cursor:pointer;font-size:14px;font-weight:700;color:var(--dkgrey)">×</button></div>
     <div style="padding:14px 16px;max-height:74vh;overflow:auto">${body}</div>
   </div></div>`;
   // Re-populate half-day ticks when editing
@@ -2937,9 +2944,24 @@ function renderInvLikPicker(){
     <div style="font-size:10px;color:var(--grey);margin-top:8px;line-height:1.4">Set here only when this instalment differs from its stage — a certain deposit under a speculative stage, say.</div>
   </div>`;
 }
+// Instalments in date order (Joe, 21 Sep 2026): earliest first, undated last,
+// same-date ones in the order they were added. Display only; the stored order
+// is left alone, so nothing changes in sync or in any figure.
+function invByDate(list){
+  return (list||[]).map((v,k)=>[v,k]).sort((a,b)=>{const da=a[0].date||'',db=b[0].date||'';
+    if(da!==db){if(!da)return 1;if(!db)return -1;return da<db?-1:1;}return a[1]-b[1];}).map(x=>x[0]);
+}
+// A row that changes place is highlighted where it lands, once, after render().
+let invFlashId=null;
+function invFlash(){
+  const id=invFlashId;invFlashId=null;if(!id)return;
+  try{const el=document.querySelector('[data-inv="'+id+'"]');if(!el)return;
+    el.classList.remove('inv-flash');void el.offsetWidth;el.classList.add('inv-flash');
+    el.scrollIntoView({block:'nearest'});}catch(e){}
+}
 function invRowHtml(i,pi,v){
   const xs=v.expenses||[],xt=invExpSum(v),L=invEffLik(v,invBaseLik(i,pi));
-  return `<div style="background:#fff;padding:6px 10px;border:1px solid var(--mid);opacity:${L===0?'.55':'1'};display:grid;grid-template-columns:132px minmax(90px,1fr) auto 90px auto auto auto auto auto;gap:5px 8px;align-items:center">
+  return `<div data-inv="${escAttr(v.id)}" style="background:#fff;padding:6px 10px;border:1px solid var(--mid);opacity:${L===0?'.55':'1'};display:grid;grid-template-columns:132px minmax(90px,1fr) auto 90px auto auto auto auto auto;gap:5px 8px;align-items:center">
     <input type="date" value="${v.date||''}" style="font-size:11px;width:100%;box-sizing:border-box" title="Invoice date — past = issued, future = planned, blank = not dated yet (counts towards the fee but sits in no cashflow month)" onchange="updInvoice(${i},${pi},'${jsq(v.id)}','date',this.value)"/>
     <input type="text" value="${escAttr(v.ref||'')}" placeholder="ref / description" style="width:100%;box-sizing:border-box;min-width:0;font-size:11px" onchange="updInvoice(${i},${pi},'${jsq(v.id)}','ref',this.value)"/>
     <span style="font-size:11px;color:var(--dkgrey);font-weight:600">£</span>
@@ -2985,7 +3007,7 @@ function invBlock(i,pi,label,list,feeWord,lik){
       <span class="ep-sum">${open?'':(s.n?`${s.n} instalment${s.n>1?'s':''} · confirmed <b style="color:var(--ok)">${gbpInv(s.conf)}</b> · invoiced <b style="color:var(--blk)">${gbpInv(s.inv)}</b>${s.undated>0.005?` · <b style="color:#8a5a00">${gbpInv(s.undated)} undated</b>`:''}`:'')}</span>
       <button class="btn btn-sm" style="flex:0 0 auto" onclick="event.stopPropagation();addInvoice(${i},${pi})">+ Instalment</button>
     </div>
-    ${open&&list.length?`<div style="display:flex;flex-direction:column;gap:5px;margin-bottom:8px">${list.map(v=>invRowHtml(i,pi,v)).join('')}</div>
+    ${open&&list.length?`<div style="display:flex;flex-direction:column;gap:5px;margin-bottom:8px">${invByDate(list).map(v=>invRowHtml(i,pi,v)).join('')}</div>
     ${invTotalsStrip(s,feeWord)}`:''}
   </div>`;
 }
@@ -3227,19 +3249,342 @@ if(typeof window.matchMedia==='function'){try{const _mq=window.matchMedia('(max-
 try{if(typeof navigator!=='undefined'&&typeof location!=='undefined'&&/^https?:$/.test(location.protocol)&&navigator.serviceWorker){navigator.serviceWorker.register('sw.js').catch(()=>{});}}catch(e){}
 window.addEventListener('resize',planStickyHead);
 window.addEventListener('resize',function(){try{if(st&&st._tab==='income')drawIncChart();}catch(e){}});
+// ══ Nothing typed is lost (build 52; Joe and Anne-Marie, 2 Oct 2026) ═════════
+// One rule for the whole portal, in four parts:
+//  1. A re-render never wipes typing. Forms marked data-fk="scope" carry their
+//     edited fields across every render (and across leaving the page and coming
+//     back) until the form is saved or discarded. A background render (another
+//     person's change arriving) waits while any form holds unsaved typing, and
+//     otherwise carries every edited field on the page across.
+//  2. Editing something that exists saves by itself: the CRM cards and the
+//     project editor commit a field when you leave it, and shortly after you
+//     stop typing. There is no Save button to forget.
+//  3. Pick-lists act when you choose. Typed "add" rows keep their button, and
+//     whatever is still sitting in one when the card closes is added for you.
+//  4. Closing a form that creates something new, with details typed in, asks:
+//     Keep editing, Discard or Save. Nothing is dropped silently.
+const FK_FIELDS='input,textarea,select';
+let _fkStore={};            // scope -> {key:{v,dv}} drafts in data-fk forms
+let _fkDropped=new Set();   // scopes closed in this tick: not re-captured from the old DOM
+let _fkSkip=false;          // undo/redo: the store is the truth, carry nothing over
+let _fkBg=false;            // background render: carry every edited field over
+let _fkAsk=null,_fkJust=false;
+// A field with its own inline onchange saves itself the moment it changes, so
+// it is never "unsaved typing". The handlers named here only tidy the form
+// (refresh a hint, recalculate a total), so their fields still count.
+const FK_UI_ONLY=/^(projContactPick|mobLvHalves|planToggleRepeat|planSyncExtraPeople|planRecalcTotal|lvRefreshHalves|lvModalPersonChange|cpdTypeChanged|refreshStageDropdown|refreshPlanStageDropdown)\b/;
+function fkSelfSaving(el){try{const h=el.getAttribute?el.getAttribute('onchange'):null;return !!h&&!FK_UI_ONLY.test(h);}catch(e){return false;}}
+function fkSkipEl(el){return !el||el.disabled||el.readOnly||el.type==='hidden'||el.type==='file'||el.type==='button'||el.type==='submit'||el.type==='radio'||!!(el.hasAttribute&&el.hasAttribute('data-fk-skip'))||fkSelfSaving(el);}
+function fkDefault(el){
+  if(el.type==='checkbox')return !!el.defaultChecked;
+  if(el.tagName==='SELECT'){for(let k=0;k<el.options.length;k++)if(el.options[k].defaultSelected)return el.options[k].value;return el.options.length?el.options[0].value:'';}
+  return el.defaultValue||'';
+}
+function fkVal(el){return el.type==='checkbox'?!!el.checked:(el.value||'');}
+function fkElDirty(el){if(fkSkipEl(el))return false;return fkVal(el)!==fkDefault(el);}
+function fkDirtyIn(root){try{for(const el of root.querySelectorAll(FK_FIELDS))if(fkElDirty(el))return true;}catch(e){}return false;}
+function fkKey(el){if(el.id)return '#'+el.id;if(el.type==='checkbox'&&el.className&&el.value)return '.'+String(el.className).split(/\s+/)[0]+'='+el.value;return null;}
+function fkPut(el,v){try{if(el.type==='checkbox')el.checked=!!v;else el.value=v;}catch(e){}}
+function fkFind(root,key){
+  try{
+    if(key[0]==='#'){const el=document.getElementById(key.slice(1));return el&&root.contains(el)?el:null;}
+    const k=key.indexOf('='),cls=key.slice(1,k),val=key.slice(k+1);
+    for(const el of root.querySelectorAll('input[type=checkbox]'))if(String(el.className).split(/\s+/)[0]===cls&&el.value===val)return el;
+  }catch(e){}
+  return null;
+}
+// Put fields back to their rendered defaults: an "add" row that has just been used.
+function fkClear(){
+  for(const id of arguments){try{const el=document.getElementById(id);if(!el)continue;
+    if(el.type==='checkbox')el.checked=el.defaultChecked;
+    else if(el.tagName==='SELECT'){let d=0;for(let k=0;k<el.options.length;k++)if(el.options[k].defaultSelected){d=k;break;}el.selectedIndex=d;}
+    else el.value=el.defaultValue||'';}catch(e){}}
+}
+// What is on screen has been saved: make it the new baseline.
+function fkSettle(root,pred){
+  try{for(const el of root.querySelectorAll(FK_FIELDS)){if(pred&&!pred(el))continue;
+    if(el.type==='checkbox')el.defaultChecked=el.checked;
+    else if(el.tagName==='SELECT'){for(let k=0;k<el.options.length;k++)el.options[k].defaultSelected=el.options[k].selected;}
+    else el.defaultValue=el.value;}}catch(e){}
+}
+function fkDrop(prefix){
+  for(const k of Object.keys(_fkStore))if(k.indexOf(prefix)===0)delete _fkStore[k];
+  try{for(const c of document.querySelectorAll('[data-fk]')){const sc=c.getAttribute('data-fk');if(sc.indexOf(prefix)===0)_fkDropped.add(sc);}}catch(e){}
+  _fkDropped.add(prefix);
+  try{setTimeout(()=>{_fkDropped=new Set();},0);}catch(e){}
+}
+// A form has a draft waiting: typed on screen now, or kept from an earlier visit.
+function fkScopeDirty(scope){if(_fkStore[scope])return true;try{const c=document.querySelector('[data-fk="'+scope+'"]');return !!c&&fkDirtyIn(c);}catch(e){return false;}}
+function fkSnapshot(){
+  const snap={scroll:{},bg:null};
+  try{
+    if(_fkSkip){_fkStore={};return snap;}
+    for(const c of document.querySelectorAll('[data-fk]')){
+      const sc=c.getAttribute('data-fk');
+      if(c.scrollTop)snap.scroll[sc]=c.scrollTop;
+      if(_fkDropped.has(sc))continue;
+      const d={};
+      for(const el of c.querySelectorAll(FK_FIELDS)){const k=fkKey(el);if(k&&fkElDirty(el))d[k]={v:fkVal(el),dv:fkDefault(el)};}
+      if(Object.keys(d).length)_fkStore[sc]=d;else delete _fkStore[sc];
+    }
+    if(_fkBg){snap.bg={};for(const el of document.querySelectorAll(FK_FIELDS)){if(!el.id||el.closest('[data-fk]'))continue;if(fkElDirty(el))snap.bg[el.id]={v:fkVal(el),dv:fkDefault(el)};}}
+  }catch(e){}
+  return snap;
+}
+function fkRestore(snap){
+  try{
+    if(!_fkSkip){
+      for(const c of document.querySelectorAll('[data-fk]')){
+        const sc=c.getAttribute('data-fk'),d=_fkStore[sc];
+        // Only into a field that still stands for the same thing: same form
+        // (scope), same field (key), same saved value underneath (default).
+        if(d)for(const k in d){const el=fkFind(c,k);if(el&&!fkSkipEl(el)&&fkDefault(el)===d[k].dv)fkPut(el,d[k].v);}
+        if(snap&&snap.scroll[sc])c.scrollTop=snap.scroll[sc];
+      }
+      if(snap&&snap.bg)for(const id in snap.bg){const el=document.getElementById(id);if(el&&!fkSkipEl(el)&&!el.closest('[data-fk]')&&fkDefault(el)===snap.bg[id].dv)fkPut(el,snap.bg[id].v);}
+    }
+  }catch(e){}
+  _fkDropped=new Set();_fkSkip=false;_fkBg=false;
+}
+// Someone else's change has arrived. Never rebuild the page under a person who
+// is typing or who has typing waiting in a form; the change is already in
+// memory and shows at the next render.
+function fkBusy(){try{for(const c of document.querySelectorAll('.modal-overlay,.note-popover,.mob-sheet,[data-fk]'))if(fkDirtyIn(c))return true;}catch(e){}return false;}
+function fkBgRender(){if(isTyping()||fkBusy())return;_fkBg=true;render();}
+function fkTick(id,idle){
+  try{const el=document.getElementById(id);if(!el)return;el.textContent='Saved ✓';el.classList.add('on');
+    clearTimeout(el._fkT);el._fkT=setTimeout(()=>{el.textContent=idle;el.classList.remove('on');},1800);}catch(e){}
+}
+// ── Closing a form that holds typing: ask, never drop ─────────────────────────
+function fkRootOf(el){try{return el&&el.closest?(el.closest('.modal-overlay')||el.closest('.note-popover')||el.closest('.mob-sheet')||el):el;}catch(e){return el;}}
+function fkTouch(){_fkJust=true;try{setTimeout(()=>{_fkJust=false;},0);}catch(e){_fkJust=false;}}
+function fkAskOpen(root,fn){_fkAsk={root,fn};renderUnsavedModal();}
+window.fkClose=function(el,fn){const root=fkRootOf(el);if(root&&fkDirtyIn(root)){fkAskOpen(root,fn);return;}window[fn]();};
+function fkPopClose(id,fn){const r=document.getElementById(id);if(r&&fkDirtyIn(r)){fkAskOpen(r,fn);return;}window[fn]();}
+window.fkAskKeep=function(){_fkAsk=null;fkTouch();renderUnsavedModal();};
+window.fkAskDiscard=function(){const a=_fkAsk;_fkAsk=null;fkTouch();renderUnsavedModal();if(a&&typeof window[a.fn]==='function')window[a.fn]();};
+window.fkAskSave=function(){
+  const a=_fkAsk;_fkAsk=null;fkTouch();renderUnsavedModal();if(!a||!a.root)return;
+  let b=null;try{b=a.root.querySelector('[data-fk-save]')||Array.from(a.root.querySelectorAll('.btn-primary')).pop()||Array.from(a.root.querySelectorAll('.mob-btn:not(.sec)')).pop();}catch(e){}
+  if(b)b.click();else undoToast('Use the button on the form to save what you have typed.');
+};
+function renderUnsavedModal(){
+  const el=document.getElementById('unsaved-modal-container');if(!el)return;
+  if(!_fkAsk){el.innerHTML='';return;}
+  el.innerHTML=`<div class="modal-overlay" style="z-index:700" onclick="if(event.target===this)fkAskKeep()">
+    <div class="modal-box" onclick="event.stopPropagation()">
+      <div class="note-popover-hdr"><span>Not saved yet</span></div>
+      <div style="padding:16px"><p style="font-size:13px;color:var(--dkgrey);margin:0;line-height:1.55">You have typed details here that have not been saved. Would you like to save them?</p></div>
+      <div class="note-popover-footer">
+        <button class="btn btn-sm" style="margin-right:auto" onclick="fkAskKeep()">Keep editing</button>
+        <button class="btn btn-sm" style="background:var(--danger);border-color:var(--danger);color:#fff" onclick="fkAskDiscard()">Discard</button>
+        <button class="btn btn-sm btn-primary" onclick="fkAskSave()">Save</button>
+      </div>
+    </div>
+  </div>`;
+}
+// A timesheet cell note saves when its box closes, however it closes.
+window.fkNoteClose=function(){
+  const ta=document.getElementById('note-ta');
+  if(activeNoteCell&&ta&&fkElDirty(ta)){saveCellNotePopover();undoToast('Note saved.');}
+  else closeNotePopover();
+};
+// ── The project editor saves as you go ────────────────────────────────────────
+const EP_AUTO_RE=/^(ec-(code|name|client|contact|start|end|address)|ep-(desc|roledesc|pnotes|notes))-\d+$/;
+const EP_IDLE='Changes are saved as you make them. Ctrl+Z undoes the last one.';
+let _epAutoT=null;
+function epAutoTarget(t,i){return !!t&&((!!t.id&&EP_AUTO_RE.test(t.id))||!!(t.classList&&t.classList.contains('ep-feature-'+i)));}
+// Write the editor's fields into the project without leaving it. `names`
+// applies the number and name too (a rename moves every store keyed by the
+// project name, so it waits until the field is left, never mid-word).
+function epCommit(i,names,quiet){
+  const p=st.projects[i];if(!p)return false;
+  epHarvest(i);
+  const gv=(id,fb)=>projEditDraft[id]!==undefined?projEditDraft[id]:(fb??'');
+  const before=JSON.stringify(p);
+  const oldName=p.name;let renamed=false;
+  if(names){
+    const typed=String(gv('ec-name',p.name)).trim();
+    const putBack=()=>{projEditDraft['ec-name']=p.name;const el=document.getElementById('ec-name-'+i);if(el)el.value=p.name;};
+    if(!typed){putBack();if(!quiet)undoToast('A project needs a name, so the previous name has been kept.');}
+    else if(typed!==p.name&&st.projects.some(x=>x.name===typed)){putBack();if(!quiet)undoToast('A project with that name already exists, so the previous name has been kept.');}
+    else if(typed!==p.name){p.name=typed;renamed=true;}
+    p.code=String(gv('ec-code',p.code)).trim();
+  }
+  const clientId=resolveProjClientId(gv('ec-client',p.clientId||''));
+  const client=st.clients.find(c=>c.id===clientId);
+  p.clientId=clientId;p.clientName=client?.company||null;
+  if(projEditDraft['ec-client']!==undefined)projEditDraft['ec-client']=clientId||'';
+  p.contactId=gv('ec-contact',p.contactId||'')||null;
+  p.startDate=gv('ec-start',p.startDate||'')||null;p.endDate=gv('ec-end',p.endDate||'')||null;
+  p.feeNotes=String(gv('ep-notes',p.feeNotes||''));p.projNotes=String(gv('ep-pnotes',p.projNotes||''));
+  p.address=String(gv('ec-address',p.address||''));p.description=String(gv('ep-desc',p.description||''));p.roleDesc=String(gv('ep-roledesc',p.roleDesc||''));
+  try{const boxes=document.querySelectorAll('.ep-feature-'+i);
+    if(boxes.length){const feats=p.features||{};for(const f of PROJ_FEATURES)feats[f.k]=false;for(const el of boxes)if(el.checked)feats[el.value]=true;p.features=feats;}}catch(e){}
+  if(renamed)renameProjectEverywhere(oldName,p.name);
+  if(!renamed&&JSON.stringify(p)===before)return false;
+  save();
+  try{const root=document.querySelector('[data-fk="ep:'+i+'"]');if(root)fkSettle(root,el=>epAutoTarget(el,i));}catch(e){}
+  fkTick('ep-saved-'+i,EP_IDLE);
+  return true;
+}
+window.epAuto=function(ev,i){if(editingProj!==i||!epAutoTarget(ev.target,i))return;if(_epAutoT){clearTimeout(_epAutoT);_epAutoT=null;}epCommit(i,true,false);};
+window.epAutoSoon=function(ev,i){
+  const t=ev.target;if(editingProj!==i||!epAutoTarget(t,i)||t.type==='checkbox'||t.tagName==='SELECT')return;
+  if(_epAutoT)clearTimeout(_epAutoT);
+  _epAutoT=setTimeout(()=>{_epAutoT=null;if(editingProj===i)epCommit(i,false,true);},1000);
+};
+// Leaving the editor by any route: commit what is on screen, including a stage
+// typed into the "add" row but never added.
+function epLeave(){
+  const i=editingProj;if(i===null||i===undefined||!st.projects[i])return;
+  if(_epAutoT){clearTimeout(_epAutoT);_epAutoT=null;}
+  let did=false;
+  try{const el=document.getElementById('ep-ph-'+i);const ph=el?(el.value||'').trim():'';
+    if(ph){const p=st.projects[i];if(!p.phases)p.phases=[];if(!p.phases.find(x=>x.name===ph)){p.phases.push({name:ph,active:true});did=true;}fkClear('ep-ph-'+i);}}catch(e){}
+  if(did)save();
+  epCommit(i,true,false);
+  if(did)undoToast('Saved. The stage you typed was added.');
+  fkDrop('ep:');
+}
+// ── The Add Project form keeps its stages in memory, not only on screen ───────
+const NP_PHASES=['RIBA Stage 0–1','RIBA Stage 2','RIBA Stage 3','RIBA Stage 4','RIBA Stage 5','RIBA Stage 6'];
+let npPhases=null;
+function npList(){if(!npPhases)npPhases=NP_PHASES.slice();return npPhases;}
+window.npRmPhase=function(k){npList().splice(k,1);render();};
+// ── CRM cards save as you go ──────────────────────────────────────────────────
+const CRM_AUTO_RE=/^(crm-c-(name|role|email|phone|mobile|web|linkedin|type|owner|rating)|crm-o-(name|web|rating|notes)|crm-e-(name|start|end|link|notes|hours|evening))$/;
+const CRM_IDLE='Changes save as you go';
+let _crmAutoT=null;
+function crmAutoTarget(t){return !!t&&((!!t.id&&CRM_AUTO_RE.test(t.id))||!!(t.classList&&(t.classList.contains('crm-c-sec')||t.classList.contains('crm-o-sec')||t.classList.contains('crm-e-staff'))));}
+function crmCardKind(){return crmContactModal!==null?'contact':crmOrgModal!==null?'org':(crmEventModal!==null&&crmEventModal!=='new')?'event':null;}
+function crmCardRec(){const k=crmCardKind();return k==='contact'?crmContact(crmContactModal):k==='org'?crmOrg(crmOrgModal):k==='event'?crmEventById(crmEventModal):null;}
+function crmCardShown(kind){return !!document.getElementById(kind==='contact'?'crm-c-name':kind==='org'?'crm-o-name':'crm-e-name');}
+function crmByLine(rec){
+  if(!rec)return'';
+  const on=d=>{try{return d?' on '+fmtLong(parseISO(d)):'';}catch(e){return'';}};
+  const a=rec.createdBy?`Added by ${escAttr(rec.createdBy)}${on(rec.createdAt)}`:(rec.createdAt?`Added${on(rec.createdAt)}`:'');
+  const u=rec.updatedBy?`last edited by ${escAttr(rec.updatedBy)}${on(rec.updatedAt)}`:'';
+  const t=[a,u].filter(Boolean).join(' · ');
+  return t?`<div class="crm-byline">${t}</div>`:'';
+}
+function crmHarvestOrgForm(o,quiet){
+  const val=id=>{const el=document.getElementById(id);return el?el.value:'';};
+  if(!document.getElementById('crm-o-name'))return false;
+  let name=(val('crm-o-name')||'').trim();
+  if(!name){name=o.name;if(!quiet)undoToast('The company needs a name, so the previous name has been kept.');}
+  else if(st.crmOrgs.some(x=>x.name.trim().toLowerCase()===name.toLowerCase()&&x.id!==o.id)){name=o.name;if(!quiet)undoToast('A company with that name already exists, so the previous name has been kept.');}
+  const sectors=[...document.querySelectorAll('.crm-o-sec:checked')].map(x=>x.value);
+  Object.assign(o,{name,website:val('crm-o-web').trim(),notes:val('crm-o-notes'),sectors});
+  const rEl=document.getElementById('crm-o-rating');if(rEl&&rEl.value)o.rating=rEl.value;
+  if(o.clientId){const cl=st.clients.find(c=>c.id===o.clientId);if(cl&&cl.company!==name){cl.company=name;st.projects.forEach(p=>{if(p.clientId===cl.id)p.clientName=name;});}}
+  return true;
+}
+function crmHarvestEventForm(e){
+  const val=id=>{const el=document.getElementById(id);return el?el.value:'';};
+  if(!document.getElementById('crm-e-name'))return false;
+  const timeSig=()=>JSON.stringify([e.start,e.end,e.staff,e.hoursPerDay,e.evening]);
+  const t0=timeSig();
+  const staff=[...document.querySelectorAll('.crm-e-staff:checked')].map(x=>x.value);
+  const evEl=document.getElementById('crm-e-evening');
+  Object.assign(e,{name:(val('crm-e-name')||'').trim()||e.name,start:val('crm-e-start')||null,end:val('crm-e-end')||null,link:val('crm-e-link').trim(),notes:val('crm-e-notes'),staff,hoursPerDay:parseFloat(val('crm-e-hours'))||7.5,evening:!!(evEl&&evEl.checked)});
+  if(timeSig()!==t0)applyEventTime(e);
+  return true;
+}
+function crmCardSig(kind,rec){const x=Object.assign({},rec);delete x.updatedBy;delete x.updatedAt;return JSON.stringify([x,kind==='contact'?st.crmOrgs.map(o=>o.id+'|'+(o.website||'')):kind==='org'?st.clients.map(c=>c.company):0]);}
+// Write the open card's fields into its record. `final` is the close: it also
+// takes a company typed into the contact's "add a company" box.
+function crmCommitCard(final,quiet){
+  const kind=crmCardKind(),rec=crmCardRec();if(!rec||!crmCardShown(kind))return false;
+  const before=crmCardSig(kind,rec);
+  if(kind==='contact')crmHarvestContactForm(rec,final);
+  else if(kind==='org')crmHarvestOrgForm(rec,quiet);
+  else crmHarvestEventForm(rec);
+  if(crmCardSig(kind,rec)===before)return false;
+  rec.updatedBy=cur().name;rec.updatedAt=crmTodayISO();
+  save();
+  try{const box=document.querySelector('#crm-modal-container .modal-box');if(box)fkSettle(box,crmAutoTarget);}catch(e){}
+  fkTick('crm-saved',CRM_IDLE);
+  return true;
+}
+window.crmAuto=function(ev){if(!crmCardKind()||!crmAutoTarget(ev.target))return;if(_crmAutoT){clearTimeout(_crmAutoT);_crmAutoT=null;}crmCommitCard(false,false);};
+window.crmAutoSoon=function(ev){
+  const t=ev.target;if(!crmCardKind()||!crmAutoTarget(t)||t.type==='checkbox'||t.tagName==='SELECT')return;
+  if(_crmAutoT)clearTimeout(_crmAutoT);
+  _crmAutoT=setTimeout(()=>{_crmAutoT=null;crmCommitCard(false,true);},1000);
+};
+function crmLogCore(kind,id,date,note){st.crmInteractions.push({id:crmId('ci'),date:date||crmTodayISO(),by:cur().name,note,contactIds:kind==='contact'?[id]:[],orgIds:kind==='org'?[id]:[]});}
+function crmActionCore(kind,id,text,due){const me=cur().name;st.crmActions.push({id:crmId('ca'),text,owner:crmMentionOwner(text)||me,due:due||null,done:false,doneAt:null,doneBy:null,createdBy:me,createdAt:crmTodayISO(),contactId:kind==='contact'?id:null,orgId:kind==='org'?id:null});}
+function crmLinkCore(c,to,note){
+  if(!c||!to||c.links.some(l=>l.id===to))return false;
+  c.links.push({id:to,note:note||''});
+  const other=crmContact(to);if(other){normCrmContact(other);if(!other.links.some(l=>l.id===c.id))other.links.push({id:c.id,note:note||''});}
+  return true;
+}
+window.crmLinkNote=function(cid,i,v){
+  const c=crmContact(cid);if(!c||!c.links[i])return;
+  const note=String(v||'').trim(),old=c.links[i].note||'';c.links[i].note=note;
+  const other=crmContact(c.links[i].id);const back=other&&(other.links||[]).find(l=>l.id===cid);
+  if(back&&(!back.note||back.note===old))back.note=note;
+  save();fkTick('crm-saved',CRM_IDLE);
+};
+function crmSaveInterCore(id){
+  const i=st.crmInteractions.find(x=>x.id===id);if(!i)return false;
+  const dEl=document.getElementById('crm-ie-date'),nEl=document.getElementById('crm-ie-note');
+  const note=(nEl&&nEl.value||'').trim();if(!note)return false;
+  if(i.note===note&&!(dEl&&dEl.value&&dEl.value!==i.date))return false;
+  i.note=note;if(dEl&&dEl.value)i.date=dEl.value;
+  i.editedBy=cur()?.name||'';i.editedAt=crmTodayISO();
+  return true;
+}
+// Leaving a card by any route (Done, ×, a click outside, opening another card):
+// commit its fields, and add whatever is still sitting in an "add" row.
+// Returns what was added, for the confirmation toast.
+function crmLeaveCard(){
+  if(_crmAutoT){clearTimeout(_crmAutoT);_crmAutoT=null;}
+  const did=[];
+  const kind=crmCardKind(),rec=crmCardRec();
+  if(!rec||!crmCardShown(kind))return did;
+  const g=id=>document.getElementById(id);
+  const txt=id=>{const el=g(id);return el?(el.value||'').trim():'';};
+  crmCommitCard(true,false);
+  let more=false;
+  if(kind!=='event'){
+    if(crmEditingInter&&crmSaveInterCore(crmEditingInter)){more=true;did.push('your edit to the note was saved');}
+    const note=txt('crm-i-note');
+    if(note){crmLogCore(kind,rec.id,txt('crm-i-date'),note);more=true;did.push('your note was logged');}
+    const act=txt('crm-a-text-'+rec.id);
+    if(act){crmActionCore(kind,rec.id,act,txt('crm-a-due-'+rec.id));more=true;did.push('your action was added');}
+  }
+  if(kind==='contact'){
+    const to=txt('crm-link-to');if(to&&crmLinkCore(rec,to,'')){more=true;did.push('the connection was added');}
+    const evId=txt('crm-c-addevent');const ev=evId?crmEventById(evId):null;
+    if(ev&&!ev.attendees.some(a=>a.contactId===rec.id)){ev.attendees.push({contactId:rec.id,met:false,note:''});more=true;did.push('the event was linked');}
+  }
+  if(kind==='event'){
+    const nm=txt('crm-e-newname'),org=txt('crm-e-neworg');
+    if((nm||org)&&crmEvtAddPersonCore(rec,nm,org,txt('crm-e-newtype'),false)){more=true;did.push(nm?'the person you typed was added to the list':'the company you typed was added as a target');}
+    const tg=txt('crm-e-addorg');
+    if(tg){const o=crmFindOrCreateOrgByName(tg,{rating:'cold'});if(o&&!rec.targetOrgIds.includes(o.id)){rec.targetOrgIds.push(o.id);more=true;did.push('the target company was added');}}
+  }
+  if(more)save();
+  return did;
+}
+function crmLeaveToast(did){if(did&&did.length){const t=did.join(', ');undoToast('Saved: '+t+'.');}}
 function render(){
   _aggCache=null;
   // While the edit-project modal is open, capture typed-but-unsaved input values
   // before the DOM is rebuilt — live edits (stages, invoices, fee mode) re-render
   // and would otherwise silently reset the name/notes fields.
-  if(editingProj!==null&&editingProj!==undefined)epHarvest(editingProj);
+  if(editingProj!==null&&editingProj!==undefined&&!_fkSkip)epHarvest(editingProj);
+  const _fk=fkSnapshot();   // typed-but-unsaved fields in data-fk forms, carried across the rebuild
   // Keep the forecast's horizontal position across a re-render (the page's own
   // vertical position survives innerHTML replacement by itself).
   const _psPrev=document.querySelector('.plan-scroll');const _psX=_psPrev?_psPrev.scrollLeft:0;
   document.getElementById('app').innerHTML=buildApp();
   if(_psX){const _psNow=document.querySelector('.plan-scroll');if(_psNow)_psNow.scrollLeft=_psX;}
   planStickyHead();
-  renderPlanColorPicker();renderTeamAddModal();if(st._tab==='projects'&&healthProj)setTimeout(drawChart,60);if(st._tab==='reports'&&customReportResult&&customReportResult.length)setTimeout(drawCustomReportChart,60);if(st._tab==='cpd')setTimeout(drawCpdPie,60);if(st._tab==='income'){setTimeout(drawIncChart,60);incHBarSync();setTimeout(incHBarSync,80);}renderNotePopover();renderPlanPopover();renderMsPopover();renderPlanChoice();renderPlaceholderPopover();renderPlanBreakdown();renderConfirmModal();renderOfficeWidePopover();renderRateModal();renderCpdModal();renderCrmModal();renderLeaveModal();renderAddClientModal();renderIncPopover();renderIncLikPicker();renderInvLikPicker();renderFpPop();renderUnsavedModal();}
+  renderPlanColorPicker();renderTeamAddModal();if(st._tab==='projects'&&healthProj)setTimeout(drawChart,60);if(st._tab==='reports'&&customReportResult&&customReportResult.length)setTimeout(drawCustomReportChart,60);if(st._tab==='cpd')setTimeout(drawCpdPie,60);if(st._tab==='income'){setTimeout(drawIncChart,60);incHBarSync();setTimeout(incHBarSync,80);}renderNotePopover();renderPlanPopover();renderMsPopover();renderPlanChoice();renderPlaceholderPopover();renderPlanBreakdown();renderConfirmModal();renderOfficeWidePopover();renderRateModal();renderCpdModal();renderCrmModal();renderLeaveModal();renderAddClientModal();renderIncPopover();renderIncLikPicker();renderInvLikPicker();renderFpPop();renderUnsavedModal();fkRestore(_fk);}
 
 // ── App shell ─────────────────────────────────────────────────────────────────
 function buildApp(){
@@ -3770,7 +4115,7 @@ function renderNotePopover(){
   const dayLabels=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
   const label=`${pj} · ${ph} · ${dayLabels[day]||'Day '+day}`;
   el.innerHTML=`<div class="note-popover" id="note-popover" style="top:${y}px;left:${x}px">
-    <div class="note-popover-hdr"><span>📝 Note</span><button onclick="closeNotePopover()" style="background:none;border:none;cursor:pointer;font-size:14px;font-weight:700;color:var(--dkgrey)">×</button></div>
+    <div class="note-popover-hdr"><span>📝 Note</span><button onclick="fkNoteClose()" title="Close (the note is saved)" style="background:none;border:none;cursor:pointer;font-size:14px;font-weight:700;color:var(--dkgrey)">×</button></div>
     <div style="font-size:10px;color:var(--dkgrey);padding:4px 11px;border-bottom:1px solid var(--mid)">${label}</div>
     <textarea id="note-ta" placeholder="Add a note, e.g. 'Window elevations for Chris'">${txt}</textarea>
     <div class="note-popover-footer">
@@ -4017,9 +4362,9 @@ function renderPlaceholderPopover(){
   const el=document.getElementById('plan-ph-popover-container');if(!el)return;
   if(!planPhPopoverState){el.innerHTML='';return;}
   const{id,name,role,billable,cost,weeklyHours}=planPhPopoverState;
-  el.innerHTML=`<div class="modal-overlay" id="plan-ph-overlay" onclick="if(event.target.id==='plan-ph-overlay'&&window._ovMd===event.target)closePlaceholderPopover()">
+  el.innerHTML=`<div class="modal-overlay" id="plan-ph-overlay" onclick="if(event.target.id==='plan-ph-overlay'&&window._ovMd===event.target)fkClose(this,'closePlaceholderPopover')">
     <div class="modal-box">
-      <div class="note-popover-hdr"><span>${id?'Edit placeholder':'Add placeholder'}</span><button onclick="closePlaceholderPopover()" style="background:none;border:none;cursor:pointer;font-size:14px;font-weight:700;color:var(--dkgrey)">×</button></div>
+      <div class="note-popover-hdr"><span>${id?'Edit placeholder':'Add placeholder'}</span><button onclick="fkClose(this,'closePlaceholderPopover')" style="background:none;border:none;cursor:pointer;font-size:14px;font-weight:700;color:var(--dkgrey)">×</button></div>
       <div style="padding:14px">
         <label style="font-size:10px;letter-spacing:.07em;text-transform:uppercase;color:var(--dkgrey);display:block;margin-bottom:4px;font-weight:600">Name</label>
         <input type="text" id="ph-name-input" value="${escAttr(name)}" placeholder="e.g. New Architect (TBC)" style="width:100%;margin-bottom:10px"/>
@@ -4439,7 +4784,7 @@ function renderMsPopover(){
   const scopeNote=(project==='__leave__'||project==='__nb__')?(person?`For ${person}`:'For the whole office'):'';
   const top=Math.max(8,Math.min(y,window.innerHeight-380)),left=Math.max(8,Math.min(x,window.innerWidth-300));
   el.innerHTML=`<div class="note-popover plan-popover-lg" id="plan-ms-popover" style="top:${top}px;left:${left}px;max-height:calc(100vh - ${top+10}px)">
-    <div class="note-popover-hdr"><span>Milestone — ${escAttr(friendlyMsScope(project,stage))}</span><button onclick="event.stopPropagation();closeMsPopover()" style="background:none;border:none;cursor:pointer;font-size:14px;font-weight:700;color:var(--dkgrey)">×</button></div>
+    <div class="note-popover-hdr"><span>Milestone — ${escAttr(friendlyMsScope(project,stage))}</span><button onclick="event.stopPropagation();fkClose(this,'closeMsPopover')" style="background:none;border:none;cursor:pointer;font-size:14px;font-weight:700;color:var(--dkgrey)">×</button></div>
     ${scopeNote?`<div style="font-size:10px;color:var(--dkgrey);padding:5px 14px;border-bottom:1px solid var(--mid);font-weight:600">${escAttr(scopeNote)}</div>`:''}
     ${needsProject?'':`<div style="padding:8px 14px;max-height:160px;overflow-y:auto">
       ${list.length?list.map(m=>`<div class="plan-ms-row"><span>${fmt(parseISO(m.date))} — ${escAttr(m.text)}</span><span style="white-space:nowrap"><button onclick="event.stopPropagation();planMsBeginEdit('${m.id}')" title="Edit this milestone" style="background:none;border:none;cursor:pointer;color:var(--blue);font-size:12px;padding:0 6px">✎</button><button onclick="event.stopPropagation();doRemoveMilestone('${m.id}')" style="background:none;border:none;color:var(--danger);cursor:pointer;font-size:14px;font-weight:700;padding:0 0 0 8px">×</button></span></div>`).join(''):`<div style="font-size:12px;color:var(--dkgrey);padding:6px 0">No milestones in this period yet.</div>`}
@@ -4501,7 +4846,7 @@ function renderOfficeWidePopover(){
   const kindLabel=kind==='leave'?'Leave':'Non-billable';
   const typeList=kind==='leave'?LEAVE_TYPES:NB_TYPES;
   el.innerHTML=`<div class="note-popover plan-popover-lg" id="plan-popover" style="top:${top}px;left:${left}px;max-height:calc(100vh - ${top+10}px)">
-    <div class="note-popover-hdr"><span>Office-wide ${kindLabel}</span><button onclick="event.stopPropagation();closeOfficeWide()" style="background:none;border:none;cursor:pointer;font-size:14px;font-weight:700;color:var(--dkgrey)">×</button></div>
+    <div class="note-popover-hdr"><span>Office-wide ${kindLabel}</span><button onclick="event.stopPropagation();fkClose(this,'closeOfficeWide')" style="background:none;border:none;cursor:pointer;font-size:14px;font-weight:700;color:var(--dkgrey)">×</button></div>
     <div style="font-size:10px;color:var(--dkgrey);padding:6px 14px;border-bottom:1px solid var(--mid)">Applies to all ${people.length} active team member${people.length===1?'':'s'} — each at their own daily hours. You can adjust or remove any individual afterwards on their row.</div>
     <div style="padding:12px 14px">
       <div style="margin-bottom:12px"><label style="font-size:10px;letter-spacing:.07em;text-transform:uppercase;color:var(--dkgrey);display:block;margin-bottom:4px;font-weight:600">${kind==='leave'?'Leave type':'Category'}</label>
@@ -4751,7 +5096,7 @@ function renderPlanPopover(){
     :`${person?person+' · ':''}${kind==='leave'?'Leave':'Non-billable'}`;
   const top=Math.max(8,Math.min(y,window.innerHeight-420)),left=Math.max(8,Math.min(x,window.innerWidth-320));
   el.innerHTML=`<div class="note-popover plan-popover-lg" id="plan-popover" style="top:${top}px;left:${left}px;max-height:calc(100vh - ${top+10}px)">
-    <div class="note-popover-hdr"><span>${mode==='edit'?'Edit entry':'New entry'}</span><button onclick="event.stopPropagation();closePlanPopover()" style="background:none;border:none;cursor:pointer;font-size:14px;font-weight:700;color:var(--dkgrey)">×</button></div>
+    <div class="note-popover-hdr"><span>${mode==='edit'?'Edit entry':'New entry'}</span><button onclick="event.stopPropagation();fkClose(this,'closePlanPopover')" style="background:none;border:none;cursor:pointer;font-size:14px;font-weight:700;color:var(--dkgrey)">×</button></div>
     <div style="font-size:10px;color:var(--dkgrey);padding:6px 14px;border-bottom:1px solid var(--mid)">${label}</div>
     ${(mode==='edit'&&kind==='nb'&&type==='CPD and training'&&person)?(()=>{const links=cpdWritesInRange(person,startDate,endDate);return links.length?`<div style="font-size:10px;padding:7px 14px;border-bottom:1px solid var(--mid);background:var(--off)"><span style="letter-spacing:.07em;text-transform:uppercase;font-weight:600;color:var(--dkgrey)">Linked CPD</span>${links.map(l=>`<div style="display:flex;align-items:center;gap:6px;margin-top:4px"><span style="flex:1">${escAttr(l.e.ref)} — ${escAttr(l.e.title)} (${l.hours}h)</span><button class="btn btn-sm" onclick="event.stopPropagation();closePlanPopover();cpdOpenEdit('${jsq(l.e.id)}')">View</button></div>`).join('')}<div style="color:var(--dkgrey);margin-top:5px;line-height:1.4">Editing hours here changes the timesheet only — the CPD record keeps its own duration. To change both, edit the CPD entry.</div></div>`:'';})():''}
     ${(mode==='edit'&&kind==='nb'&&type==='Marketing and BD'&&person)?(()=>{const links=eventWritesInRange(person,startDate,endDate);return links.length?`<div style="font-size:10px;padding:7px 14px;border-bottom:1px solid var(--mid);background:var(--off)"><span style="letter-spacing:.07em;text-transform:uppercase;font-weight:600;color:var(--dkgrey)">Linked events</span>${links.map(l=>`<div style="display:flex;align-items:center;gap:6px;margin-top:4px"><span style="flex:1">${escAttr(l.e.name)} (${l.hours}h/day${l.ot?', overtime':''})</span><button class="btn btn-sm" onclick="event.stopPropagation();closePlanPopover();crmOpenEvent('${jsq(l.e.id)}')">View</button></div>`).join('')}<div style="color:var(--dkgrey);margin-top:5px;line-height:1.4">Editing hours here changes the timesheet only — to change both, edit the event in the CRM.</div></div>`:'';})():''}
@@ -5183,7 +5528,7 @@ function buildProjects(){
 
   if(canEdit){
     if(st._projAddOpen){
-      h+=`<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><div class="card-title" style="margin-bottom:0">Add Project</div><button class="btn btn-sm" onclick="togAddProj()">Cancel</button></div>
+      h+=`<div class="card" data-fk="np"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><div class="card-title" style="margin-bottom:0">Add Project</div><button class="btn btn-sm" onclick="togAddProj()">Cancel</button></div>
       <div class="row">
         <div style="flex:0 0 90px"><label>Project #</label><input id="np-code" placeholder="2401"/></div>
         <div style="flex:2;min-width:130px"><label>Project name</label><input id="np-name" placeholder="House Extension"/></div>
@@ -5205,7 +5550,7 @@ function buildProjects(){
       <div style="margin-bottom:14px">
         <label style="font-size:10px;letter-spacing:.07em;text-transform:uppercase;color:var(--dkgrey);display:block;margin-bottom:8px;font-weight:600">Stages</label>
         <div style="margin-bottom:10px"><span style="font-size:12px;color:var(--dkgrey)">Default RIBA stages pre-added; add custom stages below. The fee is set after creation, as instalments in the project's Invoicing section.</span></div>
-        <div id="np-phases" style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:10px">${['RIBA Stage 0–1','RIBA Stage 2','RIBA Stage 3','RIBA Stage 4','RIBA Stage 5','RIBA Stage 6'].map(s=>`<span class="phase-tag" data-name="${s}" data-active="true">${s} <span style="cursor:pointer;opacity:.6" onclick="this.parentElement.remove()">×</span></span>`).join('')}</div>
+        <div id="np-phases" style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:10px">${npList().map((s,k)=>`<span class="phase-tag" data-name="${escAttr(s)}" data-active="true">${escAttr(s)} <span style="cursor:pointer;opacity:.6" onclick="npRmPhase(${k})">×</span></span>`).join('')}</div>
         <div class="row"><input id="np-ph" placeholder="Custom stage e.g. RIBA Stage 3 (Part 1)" style="flex:2;min-width:120px" onkeydown="if(event.key==='Enter')addPR()"/><button class="btn btn-sm" onclick="addPR()" style="align-self:flex-end">Add</button></div>
       </div>
       <button class="btn btn-primary" onclick="addProj()">Create Project</button>
@@ -5384,7 +5729,7 @@ function buildProjEdit(i){
       </div>
       ${open?body:''}</div>`;
   };
-  let h=`<button class="back-btn" onclick="closeProjEdit()">← Back to Projects</button>
+  let h=`<div data-fk="ep:${i}" onchange="epAuto(event,${i})" oninput="epAutoSoon(event,${i})"><button class="back-btn" onclick="closeProjEdit()">← Back to Projects</button>
   <div class="page-title">Edit Project${p.name?` — ${escAttr(p.name)}`:''}</div>`;
 
   // ── Project details ──────────────────────────────────────────────────────────
@@ -5469,10 +5814,9 @@ function buildProjEdit(i){
   }
 
   h+=`<div class="ep-actionbar">
-    <button class="btn btn-primary" onclick="saveProjEdit(${i})">Save changes</button>
-    <button class="btn" onclick="closeProjEdit()">Cancel</button>
-    <span class="ep-dirty-note" id="ep-dirty-${i}"></span>
-  </div>`;
+    <button class="btn btn-primary" onclick="closeProjEdit()">Done</button>
+    <span class="fk-saved" id="ep-saved-${i}">${EP_IDLE}</span>
+  </div></div>`;
   return h;
 }
 
@@ -6368,7 +6712,7 @@ function incRangeTotals(blocks,from,to){let conf=0,prob=0,max=0;
 window.incOpenInvoicing=function(i,pi){
   if(!isAdmin())return;const p=st.projects[i];if(!p)return;
   const label=(p.phases||[])[pi]?p.phases[pi].name:'';
-  incPop=null;incLikPick=null;
+  incPop=null;incLikPick=null;epLeave();
   st._tab='projects';viewingUser=null;healthProj=null;openActionMenu=null;expandedStage=null;activeNoteCell=null;st._projAddOpen=false;
   editingProj=i;projEditDraft={};projEditSec={invoicing:true};if(label)projEditSec['inv:'+label]=true;
   save();render();}
@@ -6526,7 +6870,7 @@ function renderIncPopover(){
   const{i,pi,ym,x,y}=incPop;const p=st.projects[i];
   if(!p){incPop=null;el.innerHTML='';return;}
   const list=invListFor(p,pi)||[];
-  const items=list.filter(v=>(v.date||'').slice(0,7)===ym);
+  const items=invByDate(list).filter(v=>(v.date||'').slice(0,7)===ym);
   const stage=p.phases&&p.phases[pi]?p.phases[pi].name:'';
   const top=Math.max(8,Math.min(y,window.innerHeight-380)),left=Math.max(8,Math.min(x,window.innerWidth-390));
   el.innerHTML=`<div class="note-popover plan-popover-lg" id="inc-popover" style="top:${top}px;left:${left}px;min-width:360px;max-width:380px;max-height:calc(100vh - ${top+10}px);overflow-y:auto">
@@ -7489,9 +7833,9 @@ function renderCpdModal(){
   const L=(t)=>`<label style="font-size:10px;letter-spacing:.07em;text-transform:uppercase;color:var(--dkgrey);font-weight:600;display:block;margin-bottom:4px">${t}</label>`;
   const chkGrid=(cls,list,vals,cols)=>`<div style="display:grid;grid-template-columns:repeat(${cols},1fr);gap:7px 16px;border:1px solid var(--mid);border-radius:var(--r-lg);padding:12px 14px;background:var(--off)">${list.map(c=>`<label style="display:flex;gap:7px;align-items:flex-start;font-size:11.5px;font-weight:400;text-transform:none;letter-spacing:0;line-height:1.35;cursor:pointer"><input type="checkbox" class="${cls}" value="${escAttr(c)}" ${vals.includes(c)?'checked':''} ${dis} style="margin-top:1px"/>${escAttr(c)}</label>`).join('')}</div>`;
   const qBox=(id,label,val,ph,alwaysOn)=>`<div style="margin-bottom:14px">${L(label)}<textarea id="${id}" rows="2" style="width:100%;font-size:12px;line-height:1.6;font-family:'Figtree',sans-serif;resize:vertical;box-sizing:border-box" placeholder="${ph}" ${alwaysOn?'':dis}>${escAttr(val||'')}</textarea></div>`;
-  el.innerHTML=`<div class="modal-overlay" onclick="if(event.target===this&&window._ovMd===this)cpdCancel()">
+  el.innerHTML=`<div class="modal-overlay" onclick="if(event.target===this&&window._ovMd===this)fkClose(this,'cpdCancel')">
     <div class="modal-box" onclick="event.stopPropagation()" style="max-width:840px;width:94vw;max-height:92vh;overflow-y:auto;padding:0">
-      <div class="note-popover-hdr" style="position:sticky;top:0;background:#fff;z-index:2"><span>${isNew?'New CPD entry':`${canEditEntry?'Edit CPD entry':'CPD entry'}${e.ref?` — ${escAttr(e.ref)}`:''}`}</span><button onclick="cpdCancel()" style="background:none;border:none;cursor:pointer;font-size:14px;font-weight:700;color:var(--dkgrey)">×</button></div>
+      <div class="note-popover-hdr" style="position:sticky;top:0;background:#fff;z-index:2"><span>${isNew?'New CPD entry':`${canEditEntry?'Edit CPD entry':'CPD entry'}${e.ref?` — ${escAttr(e.ref)}`:''}`}</span><button onclick="fkClose(this,'cpdCancel')" style="background:none;border:none;cursor:pointer;font-size:14px;font-weight:700;color:var(--dkgrey)">×</button></div>
       <div style="padding:18px 20px">
 
         <div style="display:grid;grid-template-columns:2fr 1.2fr;gap:14px;margin-bottom:14px">
@@ -7536,7 +7880,7 @@ function renderCpdModal(){
 
       </div>
       <div class="note-popover-footer" style="position:sticky;bottom:0;background:#fff">
-        <button class="btn btn-sm" onclick="cpdCancel()">Close</button>
+        <button class="btn btn-sm" onclick="fkClose(this,'cpdCancel')">Close</button>
         <button class="btn btn-primary btn-sm" onclick="doSaveCPD()">${isNew?'Add entry':'Save'}</button>
       </div>
     </div>
@@ -8095,14 +8439,14 @@ function buildReports(){
 }
 
 // ── Event handlers ────────────────────────────────────────────────────────────
-window.tab=t=>{st._tab=t;viewingUser=null;healthProj=null;editingProj=null;openActionMenu=null;expandedStage=null;editingSubmitted=new Set();activeNoteCell=null;st._projAddOpen=false;save();render();}
+window.tab=t=>{epLeave();projEditDraft={};st._tab=t;viewingUser=null;healthProj=null;editingProj=null;openActionMenu=null;expandedStage=null;editingSubmitted=new Set();activeNoteCell=null;st._projAddOpen=!!(st._projAddOpen&&fkScopeDirty('np'));save();render();}
 window.cw=d=>{wkOff+=d;activeNoteCell=null;render();}
 window.goThisWeek=()=>{wkOff=0;activeNoteCell=null;render();}
 window.openH=name=>{healthProj=name;healthSection='finance';openActionMenu=null;expandedStage=null;render();}
 window.healthSec=function(sec){healthSection=sec==='overview'?'overview':sec==='feeplan'?'feeplan':'finance';fpUI.pop=null;render();}
 window.openFeePlan=function(name){
   if(!isAdmin())return;
-  if(epUnsaved){undoToast('Save or cancel the edits to this project first.');return;}
+  epLeave();
   editingProj=null;projEditDraft={};st._tab='projects';healthProj=name;healthSection='feeplan';fpUI.pop=null;render();
 };
 window.closeH=()=>{healthProj=null;expandedStage=null;render();}
@@ -8228,6 +8572,8 @@ window.openCellNote=function(btn,wk,pj,ph,pe,day){
   if(x+320>viewW)x=rect.left-320-8;
   if(y+160>viewH)y=viewH-170;
   if(y<8)y=8;
+  // A note typed in the box that is already open is saved before it moves.
+  {const _ta=document.getElementById('note-ta');if(activeNoteCell&&_ta&&fkElDirty(_ta))setCellNote(activeNoteCell.wk,activeNoteCell.pj,activeNoteCell.ph,activeNoteCell.pe,activeNoteCell.day,_ta.value);}
   activeNoteCell={wk,pj,ph,pe,day:parseInt(day),x,y};
   renderNotePopover();
 }
@@ -8322,9 +8668,9 @@ window.rmStageFromTS=function(wk,projName,stageName,person){
 }
 window.togPhActive=function(i,pi,checked){st.projects[i].phases[pi].active=!!checked;save();render();}
 window.sortProj=function(by){if(st._projSort.by===by)st._projSort.dir=st._projSort.dir==='asc'?'desc':'asc';else{st._projSort.by=by;st._projSort.dir='asc';}save();render();}
-window.togAddProj=function(){st._projAddOpen=!st._projAddOpen;render();}
+window.togAddProj=function(){if(st._projAddOpen){npPhases=null;fkDrop('np');}st._projAddOpen=!st._projAddOpen;render();}
 window.togActionMenu=function(i){openActionMenu=openActionMenu===i?null:i;render();}
-window.openProjEdit=function(i){editingProj=i;openActionMenu=null;healthProj=null;projEditSec={details:true};projEditDraft={};render();}
+window.openProjEdit=function(i){if(editingProj!==i)epLeave();editingProj=i;openActionMenu=null;healthProj=null;projEditSec={details:true};projEditDraft={};render();}
 // Leaving the editor with unsaved edits asks explicitly. `epDirtyNow` compares
 // every draft-tracked field against the stored project, so it catches typing
 // that never reached the store — the failure Anne-Marie kept hitting.
@@ -8346,41 +8692,24 @@ function epDirtyNow(i){
   }
   return false;
 }
-window.closeProjEdit=function(force){
-  const i=editingProj;
-  if(force!==true&&i!==null&&i!==undefined&&epDirtyNow(i)){epUnsaved=true;renderUnsavedModal();return;}
+window.closeProjEdit=function(){
+  // Build 52: nothing to ask. Everything typed is committed on the way out.
+  epLeave();
   epUnsaved=false;editingProj=null;projEditDraft={};render();
 }
 // A plain three-way question — Save / Discard / Cancel. Deliberately NOT the
 // app's openConfirmModal, which demands a typed word (it guards destructive
 // actions); asking someone to type "save" to save would be absurd.
 let epUnsaved=false;
-window.epSaveAndLeave=function(){epUnsaved=false;const i=editingProj;renderUnsavedModal();if(i!==null&&i!==undefined)saveProjEdit(i);}
-window.epDiscardAndLeave=function(){epUnsaved=false;editingProj=null;projEditDraft={};render();}
-window.epKeepEditing=function(){epUnsaved=false;renderUnsavedModal();}
-function renderUnsavedModal(){
-  const el=document.getElementById('unsaved-modal-container');if(!el)return;
-  if(!epUnsaved){el.innerHTML='';return;}
-  el.innerHTML=`<div class="modal-overlay" style="z-index:600" onclick="if(event.target===this)epKeepEditing()">
-    <div class="modal-box" onclick="event.stopPropagation()">
-      <div class="note-popover-hdr"><span>Unsaved changes</span></div>
-      <div style="padding:16px"><p style="font-size:13px;color:var(--dkgrey);margin:0;line-height:1.55">You have edits on this project that haven\u2019t been saved yet. Would you like to save them before leaving?</p></div>
-      <div class="note-popover-footer">
-        <button class="btn btn-sm" style="margin-right:auto" onclick="epKeepEditing()">Keep editing</button>
-        <button class="btn btn-sm" style="background:var(--danger);border-color:var(--danger);color:#fff" onclick="epDiscardAndLeave()">Discard</button>
-        <button class="btn btn-sm btn-primary" onclick="epSaveAndLeave()">Save changes</button>
-      </div>
-    </div>
-  </div>`;
-}
 window.saveProjEdit=function(i){epUnsaved=false;
   // Sections may be collapsed (inputs absent from the DOM) — harvest whatever IS
   // rendered into the draft, then read draft-first with the stored value as fallback.
   epHarvest(i);const p0=st.projects[i];
   const gv=(id,fb)=>projEditDraft[id]!==undefined?projEditDraft[id]:(fb??'');
-  const code=String(gv('ec-code',p0.code)).trim(),name=String(gv('ec-name',p0.name)).trim(),clientId=resolveProjClientId(gv('ec-client',p0.clientId||'')),startDate=gv('ec-start',p0.startDate||'')||null,endDate=gv('ec-end',p0.endDate||'')||null;if(!name)return;const oldName=st.projects[i].name;if(name!==oldName&&st.projects.some(p=>p.name===name)){undoToast('A project with that name already exists.');return;}const client=st.clients.find(c=>c.id===clientId);st.projects[i].code=code;st.projects[i].name=name;st.projects[i].clientId=clientId;const contactId2=gv('ec-contact',p0.contactId||'')||null;st.projects[i].clientName=client?.company||null;st.projects[i].contactId=contactId2;st.projects[i].startDate=startDate;st.projects[i].endDate=endDate;st.projects[i].feeNotes=String(gv('ep-notes',p0.feeNotes||''));st.projects[i].projNotes=String(gv('ep-pnotes',p0.projNotes||''));st.projects[i].address=String(gv('ec-address',p0.address||''));st.projects[i].description=String(gv('ep-desc',p0.description||''));st.projects[i].roleDesc=String(gv('ep-roledesc',p0.roleDesc||''));{const feats=st.projects[i].features||{};for(const f of PROJ_FEATURES)feats[f.k]=false;for(const el of document.querySelectorAll('.ep-feature-'+i+':checked'))feats[el.value]=true;st.projects[i].features=feats;}
+  const code=String(gv('ec-code',p0.code)).trim(),name=String(gv('ec-name',p0.name)).trim(),clientId=resolveProjClientId(gv('ec-client',p0.clientId||'')),startDate=gv('ec-start',p0.startDate||'')||null,endDate=gv('ec-end',p0.endDate||'')||null;if(!name)return;const oldName=st.projects[i].name;if(name!==oldName&&st.projects.some(p=>p.name===name)){undoToast('A project with that name already exists.');return;}const client=st.clients.find(c=>c.id===clientId);st.projects[i].code=code;st.projects[i].name=name;st.projects[i].clientId=clientId;const contactId2=gv('ec-contact',p0.contactId||'')||null;st.projects[i].clientName=client?.company||null;st.projects[i].contactId=contactId2;st.projects[i].startDate=startDate;st.projects[i].endDate=endDate;st.projects[i].feeNotes=String(gv('ep-notes',p0.feeNotes||''));st.projects[i].projNotes=String(gv('ep-pnotes',p0.projNotes||''));st.projects[i].address=String(gv('ec-address',p0.address||''));st.projects[i].description=String(gv('ep-desc',p0.description||''));st.projects[i].roleDesc=String(gv('ep-roledesc',p0.roleDesc||''));{const _fb=document.querySelectorAll('.ep-feature-'+i);if(_fb.length){const feats=st.projects[i].features||{};for(const f of PROJ_FEATURES)feats[f.k]=false;for(const el of _fb)if(el.checked)feats[el.value]=true;st.projects[i].features=feats;}}
   // If project name changed, migrate every store keyed by project name
   if(oldName!==name)renameProjectEverywhere(oldName,name);
+  if(_epAutoT){clearTimeout(_epAutoT);_epAutoT=null;}fkDrop('ep:');
   editingProj=null;projEditDraft={};save();render();}
 // Migrates every store that uses the project name as (part of) its key — compound
 // key maps, the planner, milestones, and per-user lists. Mirrors renamePersonEverywhere.
@@ -8503,7 +8832,7 @@ function refreshHrsUI(wk,person){
   if(btn)btn.disabled=!hrsOk||overDays.length>0;
 }
 window.logT=function(el){sE(el.dataset.wk,el.dataset.pj,el.dataset.ph,el.dataset.pe,parseInt(el.dataset.d),el.value);const tr=el.closest('tr');const tc=tr.querySelector('.total-col,.total-cell');if(tc){const d=parseInt(el.dataset.d);const isOT=d>=7;let t=0;if(isOT){for(let i=7;i<14;i++)t+=parseFloat(gE(el.dataset.wk,el.dataset.pj,el.dataset.ph,el.dataset.pe,i))||0;}else{const days=tr.querySelectorAll('input.tinput').length;for(let i=0;i<days;i++)t+=parseFloat(gE(el.dataset.wk,el.dataset.pj,el.dataset.ph,el.dataset.pe,i))||0;}tc.textContent=t||'';}refreshHrsUI(el.dataset.wk,el.dataset.pe);}
-window.addPR=function(){const ph=document.getElementById('np-ph').value.trim();if(!ph)return;const list=document.getElementById('np-phases');const tag=document.createElement('span');tag.className='phase-tag';tag.dataset.name=ph;tag.dataset.active='true';tag.innerHTML=`${escAttr(ph)}  <span style="cursor:pointer;opacity:.5" onclick="this.parentElement.remove()">×</span>`;list.appendChild(tag);document.getElementById('np-ph').value='';document.getElementById('np-ph').focus();}
+window.addPR=function(){const el=document.getElementById('np-ph');const ph=el?(el.value||'').trim():'';if(!ph)return;if(!npList().includes(ph))npList().push(ph);fkClear('np-ph');render();const e2=document.getElementById('np-ph');if(e2&&e2.focus)e2.focus();}
 // ── Project company picker ────────────────────────────────────────────────────
 // One list of every company the practice knows, so a company added in the CRM
 // is selectable here immediately. Existing billing clients come first; the rest
@@ -8556,8 +8885,8 @@ window.projContactPick=function(sel,clientSelId,hintId){
   const o=crmOrg(ct.orgId);
   if(hint&&o)hint.textContent=had?`Company switched to ${o.name} — ${ct.name}'s company.`:`Company set to ${o.name}.`;
 }
-window.addProj=function(){const code=document.getElementById('np-code').value.trim(),name=document.getElementById('np-name').value.trim(),clientId=resolveProjClientId(document.getElementById('np-client').value),startDate=document.getElementById('np-start').value||null,endDate=document.getElementById('np-end').value||null;if(!name)return;if(st.projects.find(p=>p.name===name))return;const client=st.clients.find(c=>c.id===clientId);const phases=[...document.querySelectorAll('#np-phases .phase-tag')].map(t=>({name:t.dataset.name,active:true,invoices:[]}));const contactId=document.getElementById('np-contact')?.value||null;const address=document.getElementById('np-address')?.value.trim()||'';const features={};for(const f of PROJ_FEATURES)features[f.k]=false;for(const el of document.querySelectorAll('.np-feature:checked'))features[el.value]=true;const np={code,name,clientId,clientName:client?.company||null,contactId,startDate,endDate,phases,feeMode:'stage',invoices:[],feeV2:true,rateOverrides:{},feeNotes:'',projNotes:'',address,description:'',roleDesc:'',features};ensureRibaStages(np);st.projects.push(np);st._projAddOpen=false;save();render();}
-window.addPhToP=function(i){const ph=document.getElementById(`ep-ph-${i}`).value.trim();if(!ph)return;if(!st.projects[i].phases)st.projects[i].phases=[];if(!st.projects[i].phases.find(p=>p.name===ph))st.projects[i].phases.push({name:ph,active:true});save();render();}
+window.addProj=function(){const code=document.getElementById('np-code').value.trim(),name=document.getElementById('np-name').value.trim(),clientId=resolveProjClientId(document.getElementById('np-client').value),startDate=document.getElementById('np-start').value||null,endDate=document.getElementById('np-end').value||null;if(!name){undoToast('A project needs a name.');return;}if(st.projects.find(p=>p.name===name)){undoToast('A project with that name already exists.');return;}const client=st.clients.find(c=>c.id===clientId);const phases=[...document.querySelectorAll('#np-phases .phase-tag')].map(t=>({name:t.dataset.name,active:true,invoices:[]}));{const _t=document.getElementById('np-ph');const _n=_t?(_t.value||'').trim():'';if(_n&&!phases.some(x=>x.name===_n))phases.push({name:_n,active:true,invoices:[]});}const contactId=document.getElementById('np-contact')?.value||null;const address=document.getElementById('np-address')?.value.trim()||'';const features={};for(const f of PROJ_FEATURES)features[f.k]=false;for(const el of document.querySelectorAll('.np-feature:checked'))features[el.value]=true;const np={code,name,clientId,clientName:client?.company||null,contactId,startDate,endDate,phases,feeMode:'stage',invoices:[],feeV2:true,rateOverrides:{},feeNotes:'',projNotes:'',address,description:'',roleDesc:'',features};ensureRibaStages(np);st.projects.push(np);st._projAddOpen=false;npPhases=null;fkDrop('np');save();render();}
+window.addPhToP=function(i){const ph=document.getElementById(`ep-ph-${i}`).value.trim();if(!ph)return;if(!st.projects[i].phases)st.projects[i].phases=[];if(!st.projects[i].phases.find(p=>p.name===ph))st.projects[i].phases.push({name:ph,active:true});fkClear(`ep-ph-${i}`);save();render();}
 window.rmPhFromP=function(i,pi){const proj=st.projects[i];const phase=proj?.phases?.[pi];if(!proj||!phase)return;triggerDeleteStage(proj.name,phase.name);}
 // ── Invoicing (edit-project modal; admin only) ─────────────────────────────────
 function invListFor(p,pi){if(!p)return null;const ph=(p.phases||[])[pi];if(!ph)return null;ph.invoices=ph.invoices||[];return ph.invoices;}
@@ -8568,20 +8897,20 @@ window.moveInvoice=function(i,pi,id,to){if(!isAdmin())return;const p=st.projects
   if(!v.paid&&!v.invoiced&&typeof v.likelihood!=='number'&&stageLikelihood(p,dest)!==was){v.likelihood=was;kept=true;}
   from.invoices.splice(at,1);if(!Array.isArray(dest.invoices))dest.invoices=[];dest.invoices.push(v);
   projEditSec['invoicing']=true;projEditSec['inv:'+dest.name]=true;
-  save();render();
+  invFlashId=v.id;save();render();invFlash();
   undoToast(`Instalment moved to ${dest.name}${kept?`. It keeps its ${likShort(was)} likelihood, now set on the instalment`:''}.`);};
 window.addInvoice=function(i,pi){if(!isAdmin())return;const p=st.projects[i];const list=invListFor(p,pi);if(!list)return;
-  list.push({id:crmId('iv'),amount:0,date:'',ref:'',invoiced:false,paid:false,paidDate:''});
+  const nv={id:crmId('iv'),amount:0,date:'',ref:'',invoiced:false,paid:false,paidDate:''};list.push(nv);
   projEditSec['invoicing']=true;projEditSec['inv:'+p.phases[pi].name]=true;
-  save();render();}
+  invFlashId=nv.id;save();render();invFlash();}
 window.updInvoice=function(i,pi,id,field,val){if(!isAdmin())return;const list=invListFor(st.projects[i],pi);const v=list&&list.find(x=>x.id===id);if(!v)return;
   if(field==='amount')v.amount=parseFloat(val)||0;
-  else if(field==='date')v.date=val||'';
+  else if(field==='date'){const was=invByDate(list).indexOf(v);v.date=val||'';if(invByDate(list).indexOf(v)!==was)invFlashId=v.id;}
   else if(field==='ref')v.ref=val||'';
   else if(field==='invoiced'){if(v.paid&&!val)return;v.invoiced=!!val;} // a paid invoice can't be un-issued; an issued one always counts as confirmed (invEffLik)
   else if(field==='paid'){v.paid=!!val;if(v.paid){v.invoiced=true;if(!v.paidDate)v.paidDate=isoDate(new Date());}else v.paidDate='';}
   else if(field==='paidDate')v.paidDate=val||'';
-  save();render();}
+  save();render();invFlash();}
 window.delInvoice=function(i,pi,id){if(!isAdmin())return;const list=invListFor(st.projects[i],pi);if(!list)return;const idx=list.findIndex(x=>x.id===id);if(idx<0)return;list.splice(idx,1);save();render();}
 window.addInvExp=function(i,pi,id){if(!isAdmin())return;const list=invListFor(st.projects[i],pi);const v=list&&list.find(x=>x.id===id);if(!v)return;if(!Array.isArray(v.expenses))v.expenses=[];v.expenses.push({id:crmId('ix'),desc:'',amount:0,date:'',invoiced:false});save();render();}
 window.updInvExp=function(i,pi,id,xid,field,val){if(!isAdmin())return;const list=invListFor(st.projects[i],pi);const v=list&&list.find(x=>x.id===id);const x=v&&(v.expenses||[]).find(y=>y.id===xid);if(!x)return;if(field==='amount')x.amount=parseFloat(val)||0;else if(field==='desc')x.desc=val||'';else if(field==='date')x.date=val||'';else if(field==='invoiced')x.invoiced=!!val;save();render();}
@@ -8595,11 +8924,11 @@ function renderAddClientModal(){
   if(!_addClientPrefix){if(el)el.innerHTML='';return;}
   let root=el;
   if(!root){root=document.createElement('div');root.id='add-client-modal-root';document.body.appendChild(root);}
-  root.innerHTML=`<div class="modal-overlay" onclick="if(event.target===this&&window._ovMd===this)closeAddClientModal()">
+  root.innerHTML=`<div class="modal-overlay" onclick="if(event.target===this&&window._ovMd===this)fkClose(this,'closeAddClientModal')">
     <div style="background:#fff;border-radius:var(--r-lg);max-width:680px;width:95%;max-height:90vh;overflow:auto;margin:40px auto;box-shadow:0 12px 40px rgba(38,34,30,.18)">
       <div style="position:sticky;top:0;background:#fff;z-index:2;display:flex;justify-content:space-between;align-items:center;padding:15px 22px;border-bottom:1px solid var(--mid)">
         <span style="font-size:16px;font-weight:700;color:var(--blk)">Add Client</span>
-        <button onclick="closeAddClientModal()" style="background:var(--off);border:none;border-radius:50%;width:28px;height:28px;cursor:pointer;font-size:14px;font-weight:700;color:var(--dkgrey)">×</button>
+        <button onclick="fkClose(this,'closeAddClientModal')" style="background:var(--off);border:none;border-radius:50%;width:28px;height:28px;cursor:pointer;font-size:14px;font-weight:700;color:var(--dkgrey)">×</button>
       </div>
       <div style="padding:18px 22px">
         <div style="font-size:12px;color:var(--dkgrey);margin-bottom:14px">Add a <b>person</b>, a <b>company</b>, or both. The new client will be available in the project's Client dropdown and added to the CRM automatically.</div>
@@ -8628,23 +8957,25 @@ window.doAddClientModal=function(){
   const company=orgName||person;
   if(st.clients.find(c=>c.company.toLowerCase()===company.toLowerCase())){undoToast('A client called "'+company+'" already exists — select it from the dropdown.');return;}
   const nc={id:'c-'+Date.now(),company,contact:person||'',email:v('acm-email').trim(),phone:v('acm-phone').trim()};
+  let _newCt=null;
   st.clients.push(nc);
   const crmOrg=crmFindOrCreateOrgByName(company,{sectors:[],rating:'warm'});
   if(person){
     if(st.crmContacts.some(c=>c.name.trim().toLowerCase()===person.toLowerCase()&&c.orgId===(crmOrg?crmOrg.id:null))){undoToast('That person is already in the CRM at that company — the client record was still created; select it from the dropdown.');}
     else{
     const ct={id:crmId('ct'),name:person,orgId:crmOrg?crmOrg.id:null,orgIds:crmOrg?[crmOrg.id]:[],role:v('acm-role').trim(),type:'',typeNote:'',email:v('acm-email').trim(),phone:v('acm-phone').trim(),mobile:v('acm-mobile').trim(),sectors:[],owner:cur().name,rating:'warm',source:'',links:[],createdBy:cur().name,createdAt:crmTodayISO()};
-    st.crmContacts.push(ct);
+    st.crmContacts.push(ct);_newCt=ct.id;
     }
   }
   const prefix=_addClientPrefix;
   _addClientPrefix=null;
+  const em=/^ec-(\d+)$/.exec(prefix||'');
+  if(em){projEditDraft['ec-client']=nc.id;if(_newCt)projEditDraft['ec-contact']=_newCt;}
   save();render();
-  setTimeout(()=>{
-    const selId=prefix==='np'?'np-client':prefix.replace(/ec-(\d+)/,'ec-client-$1');
-    const sel=document.getElementById(selId);
-    if(sel)sel.value=nc.id;
-  },50);
+  const put=(id,v)=>{const el=document.getElementById(id);if(el)el.value=v;};
+  if(prefix==='np'){put('np-client',nc.id);if(_newCt)put('np-contact',_newCt);}
+  else if(em){put('ec-client-'+em[1],nc.id);if(_newCt)put('ec-contact-'+em[1],_newCt);epCommit(parseInt(em[1]),false,true);}
+  undoToast('Client added and selected.');
 }
 window.rmCl=function(i){const c=st.clients[i];if(!c)return;triggerDeleteClient(c.id);}
 
@@ -8672,9 +9003,11 @@ window.doValidateConfirmInput=function(){
   btn.disabled=!match;btn.style.opacity=match?'1':'.4';
 }
 window.doConfirmModalSubmit=function(){
-  const input=document.getElementById('confirm-modal-input');
-  if(!input||!confirmModalState)return;
-  if(input.value.trim().toLowerCase()!==confirmModalState.confirmWord.toLowerCase())return;
+  if(!confirmModalState)return;
+  if(confirmModalState.confirmWord){
+    const input=document.getElementById('confirm-modal-input');
+    if(!input||input.value.trim().toLowerCase()!==confirmModalState.confirmWord.toLowerCase())return;
+  }
   const{onConfirmFn,args}=confirmModalState;
   confirmModalState=null;renderConfirmModal();
   window[onConfirmFn](...args);
@@ -8825,9 +9158,9 @@ function renderRateModal(){
   const intro=s.scope==='override'
     ?`A custom rate overrides ${person}'s standard rate on <b>this project only</b>, from the date you set. Leave empty to use their standard rate.`
     :`Each rate applies from its date until the next one. Adding a new dated rate never alters earlier history. Editing or removing an existing rate <b>does</b> re-value the hours it covered — you'll be warned first; use it only to correct mistakes.`;
-  el.innerHTML=`<div class="modal-overlay" onclick="if(event.target===this&&window._ovMd===this)closeRateModal()">
+  el.innerHTML=`<div class="modal-overlay" onclick="if(event.target===this&&window._ovMd===this)fkClose(this,'closeRateModal')">
     <div class="modal-box" onclick="event.stopPropagation()" style="max-width:440px">
-      <div class="note-popover-hdr"><span>${escAttr(title)}</span><button onclick="closeRateModal()" style="background:none;border:none;cursor:pointer;font-size:14px;font-weight:700;color:var(--dkgrey)">×</button></div>
+      <div class="note-popover-hdr"><span>${escAttr(title)}</span><button onclick="fkClose(this,'closeRateModal')" style="background:none;border:none;cursor:pointer;font-size:14px;font-weight:700;color:var(--dkgrey)">×</button></div>
       <div style="padding:16px">
         <p style="font-size:11px;color:var(--dkgrey);margin:0 0 14px;line-height:1.5">${intro}</p>
         ${s.notice?`<div style="background:#FAF1DC;border:1px solid #EAC58C;color:#9A6E1F;font-size:11px;padding:8px 10px;margin-bottom:12px">${s.notice}</div>`:''}
@@ -8848,7 +9181,7 @@ function renderRateModal(){
           </div>
         </div>
       </div>
-      <div class="note-popover-footer"><button class="btn btn-sm" onclick="closeRateModal()">Done</button></div>
+      <div class="note-popover-footer"><button class="btn btn-sm" onclick="fkClose(this,'closeRateModal')">Done</button></div>
     </div>
   </div>`;
 }
@@ -8860,9 +9193,9 @@ window.closeTeamAdd=function(){teamAddOpen=false;render();}
 function renderTeamAddModal(){
   const el=document.getElementById('team-add-container');if(!el)return;
   if(!teamAddOpen||!isAdmin()){el.innerHTML='';return;}
-  el.innerHTML=`<div class="modal-overlay" onclick="if(event.target===this&&window._ovMd===this)closeTeamAdd()">
+  el.innerHTML=`<div class="modal-overlay" onclick="if(event.target===this&&window._ovMd===this)fkClose(this,'closeTeamAdd')">
     <div class="modal-box" style="width:440px" onclick="event.stopPropagation()">
-      <div class="note-popover-hdr"><span>Add team member</span><button onclick="closeTeamAdd()" style="background:none;border:none;cursor:pointer;font-size:14px;font-weight:700;color:var(--dkgrey)">×</button></div>
+      <div class="note-popover-hdr"><span>Add team member</span><button onclick="fkClose(this,'closeTeamAdd')" style="background:none;border:none;cursor:pointer;font-size:14px;font-weight:700;color:var(--dkgrey)">×</button></div>
       <div style="padding:18px 20px">
         <div style="margin-bottom:12px"><label>Name</label><input id="nt-nm" placeholder="e.g. Jane Smith" style="width:100%;box-sizing:border-box"/></div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
@@ -8887,12 +9220,12 @@ function renderConfirmModal(){
       <div class="note-popover-hdr"><span>${escAttr(title)}</span><button onclick="closeConfirmModal()" style="background:none;border:none;cursor:pointer;font-size:14px;font-weight:700;color:var(--dkgrey)">×</button></div>
       <div style="padding:16px">
         <p style="font-size:13px;color:var(--dkgrey);margin:0 0 14px;line-height:1.5">${message}</p>
-        <label style="font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:var(--dkgrey);font-weight:600;display:block;margin-bottom:6px">Type "${escAttr(confirmWord)}" to confirm</label>
-        <input type="text" id="confirm-modal-input" placeholder="${escAttr(confirmWord)}" style="width:100%" oninput="doValidateConfirmInput()" onkeydown="if(event.key==='Enter')doConfirmModalSubmit()"/>
+        ${confirmWord?`<label style="font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:var(--dkgrey);font-weight:600;display:block;margin-bottom:6px">Type "${escAttr(confirmWord)}" to confirm</label>
+        <input type="text" id="confirm-modal-input" placeholder="${escAttr(confirmWord)}" style="width:100%" oninput="doValidateConfirmInput()" onkeydown="if(event.key==='Enter')doConfirmModalSubmit()"/>`:''}
       </div>
       <div class="note-popover-footer">
         <button class="btn btn-sm" onclick="closeConfirmModal()">Cancel</button>
-        <button class="btn btn-sm" id="confirm-modal-btn" disabled style="background:var(--danger);border-color:var(--danger);color:#fff;opacity:.4" onclick="doConfirmModalSubmit()">Confirm</button>
+        <button class="btn btn-sm" id="confirm-modal-btn" ${confirmWord?'disabled':''} style="background:var(--danger);border-color:var(--danger);color:#fff;opacity:${confirmWord?'.4':'1'}" onclick="doConfirmModalSubmit()">${confirmWord?'Confirm':'Delete'}</button>
       </div>
     </div>
   </div>`;
@@ -9167,16 +9500,17 @@ window.doExport=function(){
 
 // Global click — close any open action menu or note popover when clicking outside
 document.addEventListener('click',function(e){
+  if(_fkAsk||_fkJust)return;   // the "not saved yet" question is open, or was just answered
   if(openActionMenu!==null&&!e.target.closest('.action-wrap')){openActionMenu=null;render();}
-  if(activeNoteCell&&!e.target.closest('.note-popover')&&!e.target.classList.contains('cn-btn')){activeNoteCell=null;renderNotePopover();}
-  if(planPopoverState&&!e.target.closest('#plan-popover')&&!e.target.closest('.plan-bar')&&!e.target.closest('.plan-empty-cell')){planPopoverState=null;renderPlanPopover();}
-  if(planMsPopoverState&&!e.target.closest('#plan-ms-popover')&&!e.target.closest('.plan-ms-trigger')){planMsPopoverState=null;renderMsPopover();}
+  if(activeNoteCell&&!e.target.closest('.note-popover')&&!e.target.classList.contains('cn-btn')){fkNoteClose();}
+  if(planPopoverState&&!e.target.closest('#plan-popover')&&!e.target.closest('.plan-bar')&&!e.target.closest('.plan-empty-cell')){fkPopClose('plan-popover','closePlanPopover');}
+  if(planMsPopoverState&&!e.target.closest('#plan-ms-popover')&&!e.target.closest('.plan-ms-trigger')){fkPopClose('plan-ms-popover','closeMsPopover');}
   if(planBreakdownState&&!e.target.closest('#plan-breakdown-popover')&&!e.target.closest('.plan-util-bar')){planBreakdownState=null;renderPlanBreakdown();}
   if(crOpenDropdown&&!e.target.closest('.cr-multiselect')){crOpenDropdown=null;render();}
   if(utilOpenDropdown&&!e.target.closest('.cr-multiselect')){utilOpenDropdown=false;render();}
   if(planChoiceState&&!e.target.closest('#plan-choice-popover')&&!e.target.closest('.plan-ms-trigger')){planChoiceState=null;renderPlanChoice();}
   if(planColorState&&!e.target.closest('#plan-color-container')&&!e.target.closest('.plan-color-dot')){planColorState=null;renderPlanColorPicker();}
-  if(officeWideState&&!e.target.closest('#office-wide-container')){officeWideState=null;renderOfficeWidePopover();}
+  if(officeWideState&&!e.target.closest('#office-wide-container')){fkPopClose('office-wide-container','closeOfficeWide');}
   if(incPop&&!e.target.closest('#inc-popover')&&!e.target.closest('.inc-cell')){incPop=null;renderIncPopover();}
   if(incLikPick&&!e.target.closest('#inc-lik-popover')&&!e.target.closest('.inc-lik-dot')){incLikPick=null;renderIncLikPicker();}
   if(incSel&&!e.target.closest('.inc-cell')){incSel=null;render();}
@@ -9275,9 +9609,9 @@ const HELP_TEXT={
     <p style="margin:0 0 8px"><b>Health — what the budget is.</b> Health measures spend against the project's <b>confirmed fee</b>: instalments at 100% likelihood, plus anything already invoiced or paid. It is <i>not</i> the whole fee. That matters: a £100k fee with only £10k at 100% measures against £10k, so the badge can't tell you you're flush with budget you may never get. A project with no instalments has no fee yet. The stage breakdown does the same per stage. <b>Spent</b> comes from timesheets only; <b>forecast</b> counts from today onward — once a day has passed, the timesheet is the record and old forecast for it no longer adds to spend.</p>
     <p style="margin:0 0 8px"><b>Rates.</b> Rates are effective-dated: changing someone's rate never rewrites historic time. A project can override a person's billable rate — useful for secondments or unbilled work.</p>
     <p style="margin:0 0 8px"><b>Likelihood.</b> Each project can carry one of four colours — <b>green</b> 100% go, <b>yellow</b> 40%, <b>orange</b> 10%, <b>grey</b> dormant — set here or on the Forecast (always in step). Sort the list by the Likelihood column or filter with the chips above it.</p>
-    <p style="margin:0 0 8px"><b>Invoicing — the fee</b> (admins only). Each stage carries its own list of instalments in Edit: amount, date, reference, a likelihood dot and two ticks. Xero still creates and issues the invoices; this is the record of them, and the fee is their sum. Future dates are planned invoices, for cashflow; a blank date means not dated yet. The <b>likelihood dot</b> follows the stage (dashed) unless you set that instalment's own (solid): <b>100% is confirmed</b>, lower is speculative, dormant counts only in Max potential. <b>Invoiced</b> means it has gone out through Xero, and an issued invoice always counts as confirmed. <b>Paid</b> records the money landing, with the received date. <b>+ Expense</b> records a cost incurred on the client's behalf, billed on top of the fee; each expense has its own Invoiced tick, and the Client expenses figure reads invoiced / total with anything still to bill flagged. <b>Open the Fee plan</b> takes you to the project's Fee plan tab, where a fee is built from a resource plan and written here with <b>Set the fee</b>. <b>Move to stage</b>, under each instalment, moves it to another stage with everything on it.</p>
+    <p style="margin:0 0 8px"><b>Invoicing — the fee</b> (admins only). Each stage carries its own list of instalments in Edit: amount, date, reference, a likelihood dot and two ticks. Xero still creates and issues the invoices; this is the record of them, and the fee is their sum. Future dates are planned invoices, for cashflow; a blank date means not dated yet. Each stage lists its instalments in date order, earliest first, with undated ones at the bottom; change a date and the instalment moves to its place, briefly highlighted. The <b>likelihood dot</b> follows the stage (dashed) unless you set that instalment's own (solid): <b>100% is confirmed</b>, lower is speculative, dormant counts only in Max potential. <b>Invoiced</b> means it has gone out through Xero, and an issued invoice always counts as confirmed. <b>Paid</b> records the money landing, with the received date. <b>+ Expense</b> records a cost incurred on the client's behalf, billed on top of the fee; each expense has its own Invoiced tick, and the Client expenses figure reads invoiced / total with anything still to bill flagged. <b>Open the Fee plan</b> takes you to the project's Fee plan tab, where a fee is built from a resource plan and written here with <b>Set the fee</b>. <b>Move to stage</b>, under each instalment, moves it to another stage with everything on it.</p>
     <p style="margin:0 0 8px"><b>Fee plan</b> (admins only). Build a fee from a resource plan and keep several <b>drafts</b> to compare. Each stage is a bar you can drag and stretch; add people to a stage (once each) and click their row to add time, or click a bar to set its share of the week, weekdays, dates and a note. Bank holidays and booked leave are shaded and still count in the fee; time planned on leave is outlined. The right-hand columns show each stage's and person's <b>fee</b>, <b>hours</b>, <b>time</b> (a person's share of their week; a stage's average team in FTE), <b>margin</b> (fee less staff cost) and an optional <b>target fee</b>. <b>Set the fee from this draft</b> writes monthly instalments to the Invoicing card, keeping anything invoiced or paid and topping each stage up to its new total. It is a one-way copy, so later changes to the plan never alter the invoices, and the agreed fee is recorded. <b>Use this plan on the Forecast</b> replaces the project's planned time, stage dates and milestones there, after a warning. Drafts never affect the Forecast, capacity or health until used.</p>
-    <p style="margin:0 0 8px"><b>Details and notes.</b> The site address and the site-feature ticks (basement, existing buildings, swimming pool) are on the create form so they're set from day one, and editable later. <b>Project notes</b> (admins and PMs) are the running record — project history and outcomes live here; <b>Fee notes</b> (admins only) hold free-text fee history and commentary, including everything imported from Harvest. <b>Editing.</b> The editor's Save and Cancel stay pinned at the foot of the screen however far you scroll, and leaving with unsaved edits asks whether to save, discard or keep editing.</p>
+    <p style="margin:0 0 8px"><b>Details and notes.</b> The site address and the site-feature ticks (basement, existing buildings, swimming pool) are on the create form so they're set from day one, and editable later. <b>Project notes</b> (admins and PMs) are the running record — project history and outcomes live here; <b>Fee notes</b> (admins only) hold free-text fee history and commentary, including everything imported from Harvest. <b>Editing.</b> The editor saves as you go: each field is saved when you leave it, and shortly after you stop typing. There is no Save button; <b>Done</b> at the foot of the screen takes you back, and Ctrl+Z undoes the last change.</p>
     <p style="margin:0"><b>Archiving.</b> Archived projects drop out of the main list and the forecast but keep all their time. Deleting a project sends it, and its time, to Deleted Items.</p>`},
   clients:{title:'How clients work',body:`
     <p style="margin:0 0 8px"><b>Clients live in the CRM.</b> Every company on the CRM's Contacts list can be picked straight from the Company box when you add a project — it joins the client list at that moment. The button on a company's card does the same thing ahead of time. Once it has a project, it shows a <b>client</b> badge automatically.</p>
@@ -9299,9 +9633,10 @@ const HELP_TEXT={
   crm:{title:'How the CRM works',body:`
     <p style="margin:0 0 8px"><b>One list of everyone.</b> People and companies live in the same Contacts list. A company can exist with nobody at it — that's the cold-call list, filtered by <b>never contacted</b>. <b>A person can sit at several companies at once</b> — open the contact and add each company under Companies; they then appear under every one of them, and the list and search show all of them. Conversations belong to the person and show under each of their companies.</p>
     <p style="margin:0 0 8px"><b>Log every conversation.</b> Open the contact (or use <b>Log a conversation</b>) and add a dated note. The newest shows in the list; the full history sits on the contact's card.</p>
+    <p style="margin:0 0 8px"><b>Saving.</b> A contact, company or event card saves as you go, so there is nothing to remember: <b>Done</b>, × or a click outside all keep your changes. Picking from a list (an event, a connection) acts straight away. If a note or an action is still sitting in its box when you close the card, it is logged for you and the portal says so. Only the forms that create something new (Add to CRM, Log a conversation, a new event) need their button, and closing one with details typed in asks first. Each card shows who added it and who last edited it.</p>
     <p style="margin:0 0 8px"><b>Actions are the to-do list.</b> Anything that needs doing becomes an action with a due date — type <b>@</b> and pick a name to assign it. The Overview shows one prioritised list, overdue first. Ticked actions can be recovered from <b>recently completed</b>.</p>
     <p style="margin:0 0 8px"><b>Ratings keep the list honest.</b> <b>Hot</b> = actively pursuing (flagged in <i>Gone quiet</i> after 4 silent weeks), <b>Warm</b> = keep alive (3 months), <b>Cold</b> = long shot, <b>Dormant</b> = history only.</p>
-    <p style="margin:0 0 8px"><b>Events.</b> Conferences get an event: who you plan to meet, who you actually met, and which of us attended — attendance writes <b>Marketing and BD</b> time to those timesheets.</p>
+    <p style="margin:0 0 8px"><b>Events.</b> Conferences get an event: who you plan to meet, who you actually met, and which of us attended — attendance writes <b>Marketing and BD</b> time to those timesheets. The large notes box holds the programme and speakers.</p>
     <p style="margin:0"><b>Active clients.</b> A company shows the <span class="badge badge-ok">client</span> badge once it has a project on the Projects page. One dataset, no separate list.</p>`},
   leave:{title:'How leave works',body:`
     <p><b>Request:</b> pick a type and your dates (weekends and bank holidays don't count — they're already off), tick any half days, and submit. Requests go to an admin; nobody approves their own leave. You can also start a request by entering leave hours on your timesheet (past weeks included) or clicking a day on your forecast leave row.</p>
@@ -9679,9 +10014,11 @@ function renderCrmModal(){
   else if(crmEventModal!==null)el.innerHTML=crmEventModalHTML();
   else el.innerHTML='';
 }
-function crmCloseModals(){_crmXArm=false;crmEditingInter=null;crmContactModal=null;crmOrgModal=null;crmEventModal=null;crmAddModal=false;crmLogModal=false;crmShowDoneActions=false;crmNewContactOrg=null;
+function crmCloseModals(){fkDrop('crm-');_crmXArm=false;crmEditingInter=null;crmContactModal=null;crmOrgModal=null;crmEventModal=null;crmAddModal=false;crmLogModal=false;crmShowDoneActions=false;crmNewContactOrg=null;
   for(const id of ['crm-act-typeahead','crm-add-name-suggest']){const el=document.getElementById(id);if(el)el.style.display='none';}}
-window.crmModalClose=()=>{crmCloseModals();render();};
+window.crmModalClose=()=>{const did=crmLeaveCard();crmCloseModals();render();crmLeaveToast(did);};
+// Discard on the create forms: close without the card commit (there is no card).
+window.crmModalDiscard=()=>{crmCloseModals();render();};
 // Backdrop click on a CRM modal: ignore drag-outs (press started inside the
 // box), and if the form holds anything typed or changed, keep the window open
 // with a toast — only Cancel / × discard. Fixes lost conversation notes that
@@ -9702,8 +10039,10 @@ function crmModalDirty(box){
 window.crmOverlayClick=function(ev){
   if(ev.target!==ev.currentTarget)return;
   if(window._ovMd!==ev.currentTarget)return; // press began inside — a drag-out, never a close
+  // A card (contact, company, event) saves as it goes, so closing loses
+  // nothing. A create form with typing in it asks.
   const box=ev.currentTarget.querySelector('.modal-box');
-  if(box&&crmModalDirty(box)){undoToast('Unsaved changes — \u201cSave and close\u201d keeps them, or click \u00d7 twice to discard');return;}
+  if(!crmCardKind()&&box&&crmModalDirty(box)){fkAskOpen(ev.currentTarget,'crmModalDiscard');return;}
   crmModalClose();
 };
 // The header ×: a dirty form arms on the first click (warning toast) and only
@@ -9713,27 +10052,23 @@ let _crmXArm=false;
 window.crmModalX=function(btn){
   try{
     const box=btn&&btn.closest?btn.closest('.modal-box'):null;
-    if(box&&crmModalDirty(box)&&!_crmXArm){
-      _crmXArm=true;
-      undoToast('Unsaved changes — click \u00d7 again to discard them, or use \u201cSave and close\u201d');
-      return;
-    }
+    if(!crmCardKind()&&box&&crmModalDirty(box)){fkAskOpen(box.closest('.modal-overlay')||box,'crmModalDiscard');return;}
   }catch(e){}
   crmModalClose();
 };
-window.crmOpenContact=id=>{crmCloseModals();crmContactModal=id;if(st._tab!=='crm')st._tab='crm';render();};
-window.crmOpenOrg=id=>{crmCloseModals();crmOrgModal=id;if(st._tab!=='crm')st._tab='crm';render();};
-window.crmOpenAdd=()=>{crmCloseModals();crmAddModal=true;render();};
-window.crmOpenLog=()=>{crmCloseModals();crmLogModal=true;render();};
-window.crmOpenNewContactAt=oid=>{crmCloseModals();crmAddModal=true;crmNewContactOrg=oid;render();};
-window.crmOpenEvent=id=>{crmCloseModals();crmEventModal=id;render();};
-window.crmOpenNewEvent=()=>{crmCloseModals();crmEventModal='new';render();};
+window.crmOpenContact=id=>{crmLeaveToast(crmLeaveCard());crmCloseModals();crmContactModal=id;if(st._tab!=='crm')st._tab='crm';render();};
+window.crmOpenOrg=id=>{crmLeaveToast(crmLeaveCard());crmCloseModals();crmOrgModal=id;if(st._tab!=='crm')st._tab='crm';render();};
+window.crmOpenAdd=()=>{crmLeaveToast(crmLeaveCard());crmCloseModals();crmAddModal=true;render();};
+window.crmOpenLog=()=>{crmLeaveToast(crmLeaveCard());crmCloseModals();crmLogModal=true;render();};
+window.crmOpenNewContactAt=oid=>{crmLeaveToast(crmLeaveCard());crmCloseModals();crmAddModal=true;crmNewContactOrg=oid;render();};
+window.crmOpenEvent=id=>{crmLeaveToast(crmLeaveCard());crmCloseModals();crmEventModal=id;render();};
+window.crmOpenNewEvent=()=>{crmLeaveToast(crmLeaveCard());crmCloseModals();crmEventModal='new';render();};
 const crmL=t=>`<label style="font-size:11.5px;color:var(--dkgrey);font-weight:600;display:block;margin-bottom:4px">${t}</label>`;
 const crmT=t=>`<div class="fsec-title">${t}</div>`;
-function crmModalShell(title,body,footer,width){
+function crmModalShell(title,body,footer,width,fk){
   return`<div class="modal-overlay" onclick="crmOverlayClick(event)">
-    <div class="modal-box" onclick="event.stopPropagation()" style="max-width:${width||860}px;width:94vw;max-height:92vh;overflow-y:auto;padding:0">
-      <div style="position:sticky;top:0;background:#fff;z-index:2;display:flex;justify-content:space-between;align-items:center;padding:15px 22px;border-bottom:1px solid var(--mid)"><span style="font-size:16px;font-weight:700;color:var(--blk)">${title}</span><button onclick="crmModalX(this)" title="Close — unsaved changes warn first" style="background:var(--off);border:none;border-radius:50%;width:28px;height:28px;cursor:pointer;font-size:14px;font-weight:700;color:var(--dkgrey)">×</button></div>
+    <div class="modal-box" data-fk="${escAttr(fk||'crm-x')}" onclick="event.stopPropagation()" onchange="crmAuto(event)" oninput="crmAutoSoon(event)" style="max-width:${width||860}px;width:94vw;max-height:92vh;overflow-y:auto;padding:0">
+      <div style="position:sticky;top:0;background:#fff;z-index:2;display:flex;justify-content:space-between;align-items:center;padding:15px 22px;border-bottom:1px solid var(--mid)"><span style="font-size:16px;font-weight:700;color:var(--blk)">${title}</span><button onclick="crmModalX(this)" title="Close" style="background:var(--off);border:none;border-radius:50%;width:28px;height:28px;cursor:pointer;font-size:14px;font-weight:700;color:var(--dkgrey)">×</button></div>
       <div style="padding:20px 22px">${body}</div>
       <div class="note-popover-footer" style="position:sticky;bottom:0;background:#fff;padding:12px 18px">${footer}</div>
     </div>
@@ -9791,9 +10126,9 @@ function crmAddModalHTML(){
     </div>
     <div style="font-size:10px;color:var(--grey);margin-top:4px">No @? It's assigned to you.</div>
   </div>`;
-  const footer=`<button class="btn btn-sm" onclick="crmModalClose()">Discard</button>
+  const footer=`<button class="btn btn-sm" onclick="crmModalDiscard()">Discard</button>
     <button class="btn btn-primary crm-addbtn" onclick="crmSaveAdd()">Save and close</button>`;
-  return crmModalShell('Add to CRM',body,footer,760);
+  return crmModalShell('Add to CRM',body,footer,760,'crm-add');
 }
 // Dedupe-as-you-type on the person field: matching existing contacts drop down;
 // picking one opens their card instead of creating a near-duplicate.
@@ -9862,9 +10197,9 @@ function crmLogModalHTML(){
       <div><label style="font-size:10px;color:var(--dkgrey);font-weight:600;display:block;margin-bottom:2px">Due by</label><input type="date" id="crm-log-due" style="width:135px"/></div>
     </div>
   </div>`;
-  const footer=`<button class="btn btn-sm" onclick="crmModalClose()">Discard</button>
+  const footer=`<button class="btn btn-sm" onclick="crmModalDiscard()">Discard</button>
     <button class="btn btn-primary crm-addbtn" onclick="crmSaveLog()">Save and close</button>`;
-  return crmModalShell('Log a conversation',body,footer,700);
+  return crmModalShell('Log a conversation',body,footer,700,'crm-log');
 }
 window.crmSaveLog=function(){
   const me=cur().name;
@@ -9890,9 +10225,9 @@ function crmContactModalHTML(){
   normCrmContact(c);
   const cOrg=c.orgId?st.crmOrgs.find(o=>o.id===c.orgId):null;
   const orgs=[...st.crmOrgs].sort((a,b)=>a.name.localeCompare(b.name));
-  let body=`<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px 14px;margin-bottom:12px">
+  let body=`${crmByLine(c)}<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px 14px;margin-bottom:12px">
     <div>${crmL('Name')}<input id="crm-c-name" value="${escAttr(c.name)}" style="width:100%;box-sizing:border-box"/></div>
-    <div>${crmL('Companies')}<div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:5px">${crmContactOrgIds(c).map(oid=>`<span class="badge" style="display:inline-flex;align-items:center;gap:5px;font-size:11px;padding:4px 8px"><a href="javascript:void(0)" onclick="crmOpenOrg('${jsq(oid)}')" style="color:inherit">${escAttr(crmOrgName(oid))}</a><button onclick="crmRemoveContactOrg('${jsq(c.id)}','${jsq(oid)}')" title="Remove from this company" style="background:none;border:none;cursor:pointer;color:var(--danger);font-weight:700;font-size:12px;padding:0;line-height:1">×</button></span>`).join('')||'<span style="font-size:11px;color:var(--grey);font-style:italic">No company yet</span>'}</div><input id="crm-c-org" list="crm-c-orgs" value="" placeholder="add a company — type to match or create" style="width:100%;box-sizing:border-box" onchange="if(this.value.trim()){crmAddContactOrg('${jsq(c.id)}',this.value);}"/>${crmOrgDatalist('crm-c-orgs')}<div style="font-size:10px;color:var(--dkgrey);margin-top:3px">Someone can sit at several companies at once — add each one.</div></div>
+    <div>${crmL('Companies')}<div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:5px">${crmContactOrgIds(c).map(oid=>`<span class="badge" style="display:inline-flex;align-items:center;gap:5px;font-size:11px;padding:4px 8px"><a href="javascript:void(0)" onclick="crmOpenOrg('${jsq(oid)}')" style="color:inherit">${escAttr(crmOrgName(oid))}</a><button onclick="crmRemoveContactOrg('${jsq(c.id)}','${jsq(oid)}')" title="Remove from this company" style="background:none;border:none;cursor:pointer;color:var(--danger);font-weight:700;font-size:12px;padding:0;line-height:1">×</button></span>`).join('')||'<span style="font-size:11px;color:var(--grey);font-style:italic">No company yet</span>'}</div><input id="crm-c-org" list="crm-c-orgs" value="" placeholder="add a company — type to match or create" style="width:100%;box-sizing:border-box" onchange="if(this.value.trim()){const v=this.value;this.value='';crmAddContactOrg('${jsq(c.id)}',v);}"/>${crmOrgDatalist('crm-c-orgs')}<div style="font-size:10px;color:var(--dkgrey);margin-top:3px">Someone can sit at several companies at once — add each one.</div></div>
     <div>${crmL('Job title')}<input id="crm-c-role" value="${escAttr(c.role||'')}" style="width:100%;box-sizing:border-box"/></div>
   </div>
   <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px 14px;margin-bottom:12px">
@@ -9912,14 +10247,14 @@ function crmContactModalHTML(){
   <div class="fsec">${crmT('Sectors')}<div style="display:flex;gap:6px;flex-wrap:wrap">${crmSectors().map(s=>`<label class="crm-chip" style="background:var(--wht);border-color:${crmSecColor(s)};color:${crmSecColor(s)}"><input type="checkbox" class="crm-c-sec" value="${escAttr(s)}" ${c.sectors.includes(s)?'checked':''} style="margin:0 5px 0 0"/>${escAttr(s)}</label>`).join('')}</div></div>`;
   body+=crmTimelineSection('contact',c)+crmActionsSection('contact',c.id)+crmLinksSection(c)+crmContactEventsSection(c);
   const footer=`${canManage()?`<button class="btn btn-danger btn-sm" style="margin-right:auto" onclick="crmTriggerDeleteContact('${jsq(c.id)}')">Delete contact</button>`:''}
-    <button class="btn btn-primary btn-sm" onclick="crmSaveContact()">Save and close</button>`;
-  return crmModalShell(escAttr(c.name),body,footer);
+    <span class="fk-saved" id="crm-saved" style="margin-right:12px">${CRM_IDLE}</span><button class="btn btn-primary btn-sm" onclick="crmModalClose()">Done</button>`;
+  return crmModalShell(escAttr(c.name),body,footer,0,'crm-c:'+c.id);
 }
 function crmLinksSection(c){
   const others=st.crmContacts.filter(x=>x.id!==c.id).sort((a,b)=>a.name.localeCompare(b.name));
   let h=`<div class="fsec">${crmT('Knows / connected to')}`;
-  if(c.links.length){h+=`<div style="display:flex;flex-direction:column;gap:4px;margin-bottom:8px">${c.links.map((l,i)=>{const o=crmContact(l.id);return o?`<div style="display:flex;gap:8px;align-items:baseline;font-size:12px"><a href="javascript:void(0)" onclick="crmOpenContact('${jsq(o.id)}')" style="color:var(--blk);font-weight:600">${escAttr(o.name)}</a>${o.orgId?`<span style="color:var(--grey);font-size:11px">${escAttr(crmOrgName(o.orgId))}</span>`:''}${l.note?`<span style="color:var(--dkgrey);font-size:11px">— ${escAttr(l.note)}</span>`:''}<a href="javascript:void(0)" onclick="crmRemoveLink('${jsq(c.id)}',${i})" style="color:var(--danger);text-decoration:none;font-weight:700;margin-left:auto">×</a></div>`:''}).join('')}</div>`;}
-  h+=`<div style="display:flex;gap:8px;flex-wrap:wrap"><select id="crm-link-to" style="min-width:180px"><option value="">— pick a contact —</option>${others.map(o=>`<option value="${o.id}">${escAttr(o.name)}${o.orgId?` (${escAttr(crmOrgName(o.orgId))})`:''}</option>`).join('')}</select><input id="crm-link-note" placeholder="How they know each other (optional)" style="flex:1;min-width:180px"/><button class="btn btn-sm" onclick="crmAddLink('${jsq(c.id)}')">Link</button></div></div>`;
+  if(c.links.length){h+=`<div style="display:flex;flex-direction:column;gap:4px;margin-bottom:8px">${c.links.map((l,i)=>{const o=crmContact(l.id);return o?`<div style="display:flex;gap:8px;align-items:center;font-size:12px"><a href="javascript:void(0)" onclick="crmOpenContact('${jsq(o.id)}')" style="color:var(--blk);font-weight:600">${escAttr(o.name)}</a>${o.orgId?`<span style="color:var(--grey);font-size:11px">${escAttr(crmOrgName(o.orgId))}</span>`:''}<input value="${escAttr(l.note||'')}" placeholder="How they know each other (optional)" onchange="crmLinkNote('${jsq(c.id)}',${i},this.value)" style="flex:1;min-width:140px;font-size:11px;padding:4px 8px"/><a href="javascript:void(0)" onclick="crmRemoveLink('${jsq(c.id)}',${i})" style="color:var(--danger);text-decoration:none;font-weight:700">×</a></div>`:''}).join('')}</div>`;}
+  h+=`<div style="display:flex;gap:8px;flex-wrap:wrap"><select id="crm-link-to" style="min-width:240px" onchange="crmAddLink('${jsq(c.id)}')"><option value="">— pick a contact to link —</option>${others.map(o=>`<option value="${o.id}">${escAttr(o.name)}${o.orgId?` (${escAttr(crmOrgName(o.orgId))})`:''}</option>`).join('')}</select><span style="font-size:10px;color:var(--dkgrey);align-self:center">Picking a name links them straight away.</span></div></div>`;
   return h;
 }
 function crmTimelineSection(kind,rec){
@@ -9988,7 +10323,7 @@ function crmActionsSection(kind,id){
       return`<div style="display:flex;gap:8px;align-items:baseline;padding:5px 0;border-bottom:1px dotted var(--mid)">
       <input type="checkbox" onclick="crmToggleAction('${jsq(a.id)}')" title="Mark done"/>
       <span style="font-size:12px;flex:1">${crmFmtNote(a.text)}</span>
-      <span style="font-size:11px;color:var(--dkgrey)">${escAttr((a.owner||'').split(' ')[0])}</span>
+      <span style="font-size:11px;color:var(--dkgrey)" title="${escAttr(a.createdBy?'Added by '+a.createdBy+(a.createdAt?' on '+fmtLong(parseISO(a.createdAt)):''):'')}">${escAttr((a.owner||'').split(' ')[0])}${a.createdBy&&a.createdBy!==a.owner?` · set by ${escAttr(a.createdBy.split(' ')[0])}`:''}</span>
       ${a.due?`<span class="badge ${od?'badge-overdue':''}">${fmt(parseISO(a.due))}</span>`:''}
       ${canDel?`<a href="javascript:void(0)" onclick="crmTriggerDeleteAction('${jsq(a.id)}')" style="color:var(--danger);text-decoration:none;font-weight:700">×</a>`:''}
     </div>`;}).join('');
@@ -10004,17 +10339,18 @@ function crmActionsSection(kind,id){
 // WITHOUT closing — so inline actions (linking an event, logging a note) can
 // preserve typed-but-unsaved field edits by harvesting first. Returns false if
 // the form isn't currently rendered or the name is blank.
-function crmHarvestContactForm(c){
+function crmHarvestContactForm(c,final){
   if(!c)return false;
   const el=id=>document.getElementById(id);
   if(!el('crm-c-name'))return false;                 // modal not rendered
   const val=id=>{const e=el(id);return e?e.value:'';};
-  const name=(val('crm-c-name')||'').trim();if(!name)return false;
+  // A blank name keeps the stored one (build 52: the card saves as it goes).
+  const name=(val('crm-c-name')||'').trim()||c.name;if(!name)return false;
   const origOrgId=c.orgId;
   // The company box is ADDITIVE now (it adds to c.orgIds on change); a value
   // still sitting in it at save time is a company typed but not yet committed.
-  const orgName=(val('crm-c-org')||'').trim();
-  if(orgName){const extra=crmFindOrCreateOrgByName(orgName);if(extra){if(!Array.isArray(c.orgIds))c.orgIds=c.orgId?[c.orgId]:[];if(!c.orgIds.includes(extra.id))c.orgIds.push(extra.id);}}
+  const orgName=final===false?'':(val('crm-c-org')||'').trim();
+  if(orgName){fkClear('crm-c-org');const extra=crmFindOrCreateOrgByName(orgName);if(extra){if(!Array.isArray(c.orgIds))c.orgIds=c.orgId?[c.orgId]:[];if(!c.orgIds.includes(extra.id))c.orgIds.push(extra.id);}}
   const org=crmContactOrgIds(c).length?crmOrg(crmContactOrgIds(c)[0]):null;
   const sectors=[...document.querySelectorAll('.crm-c-sec:checked')].map(x=>x.value);
   Object.assign(c,{name,orgId:org?org.id:null,role:val('crm-c-role').trim(),type:val('crm-c-type').trim(),email:val('crm-c-email').trim(),phone:val('crm-c-phone').trim(),mobile:val('crm-c-mobile').trim(),linkedin:val('crm-c-linkedin').trim(),owner:val('crm-c-owner')||c.owner,rating:val('crm-c-rating')||'warm',sectors});
@@ -10039,6 +10375,7 @@ window.crmLinkEventNow=function(cid){
   const sel=document.getElementById('crm-c-addevent');const evId=sel?sel.value:'';
   if(!evId)return;
   const ev=crmEventById(evId);if(!ev)return;
+  fkClear('crm-c-addevent');
   crmHarvestContactForm(c);
   if(!ev.attendees.some(a=>a.contactId===c.id))ev.attendees.push({contactId:c.id,met:false,note:''});
   save();render();
@@ -10056,19 +10393,18 @@ function crmContactEventsSection(c){
   let h=`<div class="fsec">${crmT('Events')}`;
   if(attended.length)h+=`<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">${attended.map(e=>`<span class="crm-chip" style="background:var(--wht);border-color:var(--mid);color:var(--blk);display:inline-flex;gap:6px;align-items:center"><a href="javascript:void(0)" onclick="crmOpenEvent('${jsq(e.id)}')" style="color:var(--blk);text-decoration:none;font-weight:600">${escAttr(e.name)}</a><a href="javascript:void(0)" onclick="crmUnlinkEvent('${jsq(c.id)}','${jsq(e.id)}')" title="Remove from this event" style="color:var(--danger);text-decoration:none;font-weight:700">×</a></span>`).join('')}</div>`;
   else h+=`<div style="font-size:11px;color:var(--grey);font-style:italic;margin-bottom:8px">Not linked to any event yet.</div>`;
-  if(others.length)h+=`<div style="display:flex;gap:8px;flex-wrap:wrap"><select id="crm-c-addevent" style="min-width:200px"><option value="">— link to an event —</option>${others.map(e=>`<option value="${escAttr(e.id)}">${escAttr(e.name)}</option>`).join('')}</select><button class="btn btn-sm" onclick="crmLinkEventNow('${jsq(c.id)}')">Add to event</button></div>`;
+  if(others.length)h+=`<div style="display:flex;gap:8px;flex-wrap:wrap"><select id="crm-c-addevent" style="min-width:240px" onchange="crmLinkEventNow('${jsq(c.id)}')"><option value="">— pick an event to link —</option>${others.map(e=>`<option value="${escAttr(e.id)}">${escAttr(e.name)}</option>`).join('')}</select><span style="font-size:10px;color:var(--dkgrey);align-self:center">Picking an event adds them straight away.</span></div>`;
   else if(!st.crmEvents.length)h+=`<div style="font-size:11px;color:var(--grey)">No events yet — create one on the CRM Events tab.</div>`;
   return h+`</div>`;
 }
 window.crmAddLink=function(cid){
   const c=crmContact(cid);if(!c)return;
-  const to=document.getElementById('crm-link-to').value;
-  const note=(document.getElementById('crm-link-note').value||'').trim();
+  const sel=document.getElementById('crm-link-to');const to=sel?sel.value:'';
+  const ne=document.getElementById('crm-link-note');const note=ne?(ne.value||'').trim():'';
   if(!to)return;
+  fkClear('crm-link-to');
   if(c.links.some(l=>l.id===to)){undoToast('Already linked.');return;}
-  c.links.push({id:to,note});
-  const other=crmContact(to);
-  if(other&&!other.links.some(l=>l.id===cid))other.links.push({id:cid,note});
+  crmLinkCore(c,to,note);
   save();render();
 }
 window.crmRemoveLink=function(cid,i){
@@ -10083,22 +10419,21 @@ window.crmAddInteraction=function(kind,id){
   const date=document.getElementById('crm-i-date').value||crmTodayISO();
   const note=(document.getElementById('crm-i-note').value||'').trim();
   if(!note){undoToast('Write a note first.');return;}
-  st.crmInteractions.push({id:crmId('ci'),date,by:me,note,contactIds:kind==='contact'?[id]:[],orgIds:kind==='org'?[id]:[]});
+  crmLogCore(kind,id,date,note);
+  fkClear('crm-i-note','crm-i-date');
   save();render();
 }
 window.crmTriggerDeleteInteraction=function(id){
-  openConfirmModal('Delete note',`Delete this conversation note permanently? Unlike contacts, deleted notes don't go to Deleted Items.`,'delete','crmDeleteInteraction',[id]);
+  openConfirmModal('Delete note','Are you sure you want to delete this conversation note? Deleted notes do not go to Deleted Items.','','crmDeleteInteraction',[id]);
 }
 window.crmDeleteInteraction=function(id){st.crmInteractions=st.crmInteractions.filter(i=>i.id!==id);save();render();}
-window.crmStartEditInteraction=function(id){crmEditingInter=id;render();}
+window.crmStartEditInteraction=function(id){if(crmEditingInter&&crmEditingInter!==id&&crmSaveInterCore(crmEditingInter))save();crmEditingInter=id;render();}
 window.crmCancelEditInteraction=function(){crmEditingInter=null;render();}
 window.crmSaveInteraction=function(id){
   const i=st.crmInteractions.find(x=>x.id===id);if(!i)return;
-  const dEl=document.getElementById('crm-ie-date'),nEl=document.getElementById('crm-ie-note');
-  const note=(nEl&&nEl.value||'').trim();
-  if(!note)return;
-  i.note=note;if(dEl&&dEl.value)i.date=dEl.value;
-  i.editedBy=cur()?.name||'';i.editedAt=crmTodayISO();
+  const nEl=document.getElementById('crm-ie-note');
+  if(!(nEl&&nEl.value||'').trim())return;
+  crmSaveInterCore(id);
   crmEditingInter=null;save();render();
 }
 window.crmAddAction=function(kind,id){
@@ -10107,7 +10442,8 @@ window.crmAddAction=function(kind,id){
   if(!text){undoToast('Describe the action first.');return;}
   const owner=crmMentionOwner(text)||me;
   const due=document.getElementById(`crm-a-due-${id}`).value||null;
-  st.crmActions.push({id:crmId('ca'),text,owner,due,done:false,doneAt:null,doneBy:null,createdBy:me,createdAt:crmTodayISO(),contactId:kind==='contact'?id:null,orgId:kind==='org'?id:null});
+  crmActionCore(kind,id,text,due);
+  fkClear(`crm-a-text-${id}`,`crm-a-due-${id}`);
   save();render();
 }
 window.crmToggleAction=function(id){
@@ -10117,7 +10453,7 @@ window.crmToggleAction=function(id){
   save();render();
 }
 window.crmTriggerDeleteAction=function(id){
-  openConfirmModal('Delete action','Delete this action permanently? (If it’s finished, tick it done instead — completed actions stay in the history.)','delete','crmDeleteAction',[id]);
+  openConfirmModal('Delete action','Are you sure you want to delete this action? If it is finished, tick it done instead: completed actions stay in the history.','','crmDeleteAction',[id]);
 }
 window.crmDeleteAction=function(id){st.crmActions=st.crmActions.filter(a=>a.id!==id);save();render();}
 
@@ -10129,7 +10465,7 @@ function crmOrgModalHTML(){
   const ppl=crmOrgPeople(o.id).sort((a,b)=>a.name.localeCompare(b.name));
   const client=o.clientId?st.clients.find(c=>c.id===o.clientId):null;
   const nProj=client?st.projects.filter(p=>p.clientId===client.id).length:0;
-  let body=`<div style="display:grid;grid-template-columns:1.6fr 1.4fr 0.8fr;gap:14px;margin-bottom:14px">
+  let body=`${crmByLine(o)}<div style="display:grid;grid-template-columns:1.6fr 1.4fr 0.8fr;gap:14px;margin-bottom:14px">
     <div>${crmL('Company name')}<input id="crm-o-name" value="${escAttr(o.name)}" style="width:100%;box-sizing:border-box"/></div>
     <div>${crmL('Company website')}<div style="display:flex;gap:8px;align-items:center"><input id="crm-o-web" value="${escAttr(o.website||'')}" placeholder="optional — e.g. acme.com" style="flex:1;box-sizing:border-box"/>${o.website&&crmHref(o.website)?`<a href="${escAttr(crmHref(o.website))}" target="_blank" rel="noopener noreferrer" title="Open website" style="font-size:15px;text-decoration:none;color:var(--accent);white-space:nowrap">↗</a>`:''}</div></div>
     <div>${crmL('Rating')}${ppl.length?`<div style="padding-top:5px">${crmRateBadge(crmOrgRating(o))} <span style="font-size:10px;color:var(--dkgrey)">from its people</span></div>`:`<select id="crm-o-rating" style="width:100%">${Object.keys(CRM_RATE_LABEL).map(r=>`<option value="${r}" ${o.rating===r?'selected':''}>${CRM_RATE_LABEL[r]}</option>`).join('')}</select>`}</div>
@@ -10151,8 +10487,8 @@ function crmOrgModalHTML(){
   body+=crmTimelineSection('org',o)+crmActionsSection('org',o.id);
   const delDisabled=ppl.length>0;
   const footer=`${canManage()?`<span style="margin-right:auto;display:inline-flex;align-items:center;gap:8px" ${delDisabled?'title="A company can\'t be deleted while it still has people — open each contact and move or delete them first"':''}><button class="btn btn-danger btn-sm" ${delDisabled?'disabled':''} onclick="crmTriggerDeleteOrg('${jsq(o.id)}')">Delete company</button>${delDisabled?`<span style="font-size:10px;color:var(--grey)">has ${ppl.length} ${ppl.length===1?'person':'people'} — move or delete them first</span>`:''}</span>`:''}
-    <button class="btn btn-primary btn-sm" onclick="crmSaveOrg()">Save and close</button>`;
-  return crmModalShell(escAttr(o.name)+(client&&nProj?' <span class="badge badge-ok" style="margin-left:8px">Active client</span>':''),body,footer);
+    <span class="fk-saved" id="crm-saved" style="margin-right:12px">${CRM_IDLE}</span><button class="btn btn-primary btn-sm" onclick="crmModalClose()">Done</button>`;
+  return crmModalShell(escAttr(o.name)+(client&&nProj?' <span class="badge badge-ok" style="margin-left:8px">Active client</span>':''),body,footer,0,'crm-o:'+o.id);
 }
 window.crmSaveOrg=function(){
   const o=crmOrg(crmOrgModal);if(!o)return;
@@ -10205,20 +10541,18 @@ function crmEventModalHTML(){
   if(!e)return'';
   if(!isNew)normCrmEvent(e);
   const orgs=[...st.crmOrgs].sort((a,b)=>a.name.localeCompare(b.name));
-  let body=`<div style="display:grid;grid-template-columns:2fr 1fr 1fr;gap:14px;margin-bottom:14px">
+  let body=`${isNew?'':crmByLine(e)}<div style="display:grid;grid-template-columns:2fr 1fr 1fr;gap:14px;margin-bottom:14px">
     <div>${crmL('Event name')}<input id="crm-e-name" class="crm-biginput" value="${escAttr(e.name)}" placeholder="e.g. MIPIM 2027" style="width:100%;box-sizing:border-box"/></div>
     <div>${crmL('Starts')}<input type="date" id="crm-e-start" value="${e.start||''}" style="width:100%;box-sizing:border-box"/></div>
     <div>${crmL('Ends (optional)')}<input type="date" id="crm-e-end" value="${e.end||''}" style="width:100%;box-sizing:border-box"/></div>
   </div>
-  <div style="display:grid;grid-template-columns:1.6fr 1.4fr;gap:14px;margin-bottom:14px">
-    <div>${crmL('Weblink')}<input id="crm-e-link" value="${escAttr(e.link||'')}" placeholder="https://…" style="width:100%;box-sizing:border-box"/></div>
-    <div>${crmL('Notes / diary')}<input id="crm-e-notes" value="${escAttr(e.notes||'')}" placeholder="e.g. dinner Wed with Hoare Lea" style="width:100%;box-sizing:border-box"/></div>
-  </div>
+  <div style="margin-bottom:14px">${crmL('Weblink')}<input id="crm-e-link" value="${escAttr(e.link||'')}" placeholder="https://…" style="width:100%;box-sizing:border-box"/></div>
+  <div style="margin-bottom:14px">${crmL('Notes, programme and speakers')}<textarea id="crm-e-notes" rows="9" style="width:100%;box-sizing:border-box;font-size:12px;line-height:1.55;font-family:'Figtree',sans-serif;resize:vertical" placeholder="e.g. the schedule for each day, the speakers, dinner Wed with Hoare Lea">${escAttr(e.notes||'')}</textarea></div>
   <div style="border:1px solid var(--mid);background:var(--off);padding:12px;margin-bottom:16px">
     ${crmL('Who\'s going from amn — writes Marketing and BD time to their timesheet & forecast')}
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">${crmActiveUsers().map(n=>`<label class="crm-chip"><input type="checkbox" class="crm-e-staff" value="${escAttr(n)}" ${e.staff.includes(n)?'checked':''} style="margin:0 5px 0 0"/>${escAttr(n)}</label>`).join('')}</div>
     <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">
-      <div>${crmL('Hours per day')}<div style="display:flex;gap:6px"><input type="number" id="crm-e-hours" value="${e.hoursPerDay}" min="0.5" max="12" step="0.5" style="width:80px"/><button class="btn btn-sm" onclick="document.getElementById('crm-e-hours').value=7.5">All day</button></div></div>
+      <div>${crmL('Hours per day')}<div style="display:flex;gap:6px"><input type="number" id="crm-e-hours" value="${e.hoursPerDay}" min="0.5" max="12" step="0.5" style="width:80px"/><button class="btn btn-sm" onclick="document.getElementById('crm-e-hours').value=7.5;crmCommitCard(false,false)">All day</button></div></div>
       <label class="crm-chip" style="margin-bottom:2px"><input type="checkbox" id="crm-e-evening" ${e.evening?'checked':''} style="margin:0 5px 0 0"/>Evening event — log as overtime</label>
     </div>
     <div style="font-size:10px;color:var(--dkgrey);margin-top:8px">Time is written for each event day (weekends and bank holidays skipped). Change the dates, hours or people and it adjusts automatically. ${e.timeWrites.length?`Currently written: ${e.timeWrites.reduce((s,w)=>s+w.hours,0).toFixed(1)}h across ${[...new Set(e.timeWrites.map(w=>w.person))].length} people.`:''}${(e.timeSkipped||[]).length?` <span style="color:var(--warn)">Skipped ${(e.timeSkipped||[]).length} submitted week(s) — unlock those timesheets to add the hours.</span>`:''}</div>
@@ -10254,8 +10588,8 @@ function crmEventModalHTML(){
     </div>`;
   }
   const footer=`${canManage()&&!isNew?`<button class="btn btn-danger btn-sm" style="margin-right:auto" onclick="crmTriggerDeleteEvent('${jsq(e.id)}')">Delete event</button>`:''}
-    <button class="btn btn-primary btn-sm" onclick="crmSaveEvent()">${isNew?'Add event':'Save and close'}</button>`;
-  return crmModalShell(isNew?'New event':escAttr(e.name),body,footer);
+    ${isNew?`<button class="btn btn-primary btn-sm" onclick="crmSaveEvent()">Add event</button>`:`<span class="fk-saved" id="crm-saved" style="margin-right:12px">${CRM_IDLE}</span><button class="btn btn-primary btn-sm" onclick="crmModalClose()">Done</button>`}`;
+  return crmModalShell(isNew?'New event':escAttr(e.name),body,footer,0,'crm-e:'+(isNew?'new':e.id));
 }
 // Write/adjust the event's Marketing and BD time: withdraw previous writes, then
 // re-write for current staff × open days. Evening events go to the overtime row
@@ -10295,7 +10629,7 @@ window.crmSaveEvent=function(){
   let e;
   if(crmEventModal==='new'){
     e={id:crmId('ce'),...base,attendees:[],targetOrgIds:[],timeWrites:[],createdBy:cur().name,createdAt:crmTodayISO()};
-    st.crmEvents.push(e);crmEventModal=e.id;
+    st.crmEvents.push(e);crmEventModal=e.id;fkDrop('crm-e:new');
   }else{
     e=crmEventById(crmEventModal);if(!e)return;Object.assign(e,base);
     crmCloseModals();   // Save on an existing event commits and closes
@@ -10329,7 +10663,7 @@ window.crmEvtQuickAdd=function(eid){
   const name=(document.getElementById('crm-e-newname').value||'').trim();
   const orgName=(document.getElementById('crm-e-neworg').value||'').trim();
   const type=(document.getElementById('crm-e-newtype').value||'').trim();
-  if(crmEvtAddPersonCore(e,name,orgName,type,false))render();
+  if(crmEvtAddPersonCore(e,name,orgName,type,false)){fkClear('crm-e-newname','crm-e-neworg','crm-e-newtype');render();}
 }
 window.mobEvCreate=function(){
   if(!canManage())return;
@@ -10362,7 +10696,7 @@ window.mobEvQuickAdd=function(eid){
 window.crmEvtMet=function(eid,cid,v){const e=crmEventById(eid);if(!e)return;const a=e.attendees.find(x=>x.contactId===cid);if(a){a.met=!!v;save();render();}}
 window.crmEvtNote=function(eid,cid,v){const e=crmEventById(eid);if(!e)return;const a=e.attendees.find(x=>x.contactId===cid);if(a){a.note=v;save();}}
 window.crmEvtRemove=function(eid,cid){const e=crmEventById(eid);if(!e)return;e.attendees=e.attendees.filter(a=>a.contactId!==cid);save();render();}
-window.crmEvtAddTarget=function(eid){const e=crmEventById(eid);if(!e)return;const inp=document.getElementById('crm-e-addorg');const name=(inp&&inp.value||'').trim();if(!name)return;const o=crmFindOrCreateOrgByName(name,{rating:'cold'});if(!e.targetOrgIds.includes(o.id))e.targetOrgIds.push(o.id);save();render();}
+window.crmEvtAddTarget=function(eid){const e=crmEventById(eid);if(!e)return;const inp=document.getElementById('crm-e-addorg');const name=(inp&&inp.value||'').trim();if(!name)return;const o=crmFindOrCreateOrgByName(name,{rating:'cold'});if(!e.targetOrgIds.includes(o.id))e.targetOrgIds.push(o.id);fkClear('crm-e-addorg');save();render();}
 window.crmEvtRemoveTarget=function(eid,oid){const e=crmEventById(eid);if(!e)return;e.targetOrgIds=e.targetOrgIds.filter(x=>x!==oid);save();render();}
 
 // ── Deletes (soft — swept to Deleted Items) ────────────────────────────────────
@@ -11026,7 +11360,7 @@ function buildMobSheet(){
     <div class="mob-field"><label>Hours per day</label><div style="display:flex;gap:8px;align-items:center"><input id="mob-ne-hours" type="number" step="0.5" min="0" value="7.5" style="flex:1"/><button class="mob-chip mut" style="border:none;cursor:pointer;font-family:inherit" onclick="document.getElementById('mob-ne-hours').value='7.5'">All day</button></div></div>
     <label style="display:flex;align-items:center;gap:8px;font-size:13px;margin:0 0 10px"><input id="mob-ne-evening" type="checkbox"/> Evening event — logs as overtime</label>
     <div class="mob-field"><label>Weblink (optional)</label><input id="mob-ne-link" placeholder="https://…"/></div>
-    <div class="mob-field"><label>Notes (optional)</label><textarea id="mob-ne-notes" rows="2"></textarea></div>
+    <div class="mob-field"><label>Notes, programme and speakers (optional)</label><textarea id="mob-ne-notes" rows="6"></textarea></div>
     <div class="mob-field"><label>Who's going from amn — writes Marketing and BD time to their timesheet & forecast</label>${st.users.filter(u=>!u.deactivated).map(u=>`<label style="display:flex;align-items:center;gap:8px;font-size:13px;padding:3px 0"><input type="checkbox" class="mob-ne-staff" value="${escAttr(u.name)}"/> ${escAttr(u.name)}</label>`).join('')}</div>
     <button class="mob-btn" onclick="mobEvCreate()">Create event</button>`;
   }else if(k==='newcontact'){
@@ -11086,7 +11420,7 @@ function buildMobSheet(){
     inner+=`<div class="mob-sec"><div class="mc-title">Events</div>${evs.length?evs.map(e=>`<div class="ms-row"><b>${escAttr(e.name)}</b>${(e.staff||[]).length?` · ${e.staff.map(n=>escAttr(n.split(' ')[0])).join(', ')}`:''}<div><button class="mob-nbtn sec" style="margin-top:4px" onclick="mobSheetOpen('ev','${jsq(e.id)}')">Open event</button></div></div>`).join(''):'<div class="mob-mut">None.</div>'}</div>`;
     inner+=`<div class="mob-sec"><div class="mc-title">Away</div>${away.length?away.map(r=>`<div class="ms-row">${escAttr(r.person)} — ${escAttr(mobLvType(r))}${(r.halfDays&&r.halfDays[iso])?' (half day)':''}${r.status==='pending'?' <span class="mob-chip warn">pending</span>':''}</div>`).join(''):'<div class="mob-mut">Everyone\u2019s in.</div>'}</div>`;
   }
-  return `<div class="mob-sheet-back" onclick="mobSheetClose()"></div><div class="mob-sheet">${inner}</div>`;
+  return `<div class="mob-sheet-back" onclick="fkClose(this.nextElementSibling,'mobSheetClose')"></div><div class="mob-sheet">${inner}</div>`;
 }
 
 init().catch(e=>{console.error("Init failed:",e);_appReady=true;render();});
