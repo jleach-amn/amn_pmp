@@ -165,6 +165,7 @@ input::placeholder,textarea::placeholder{color:var(--grey);opacity:.85}input[typ
 /* Add-row — consistent across all three sections, always at the bottom of each section */
 .tsmaster tr.add-row td{padding:7px 10px;background:var(--off);border-top:1px dashed var(--mid)}
 .tsmaster tr.leave-row td{background:#F2F5EA}
+.lv-sel{width:100%;max-width:64px;font-size:11px;padding:2px 2px;text-align:center}
 .tsmaster tr.nb-row td{background:#EFF2F5}
 .tsmaster tr.proj-first-in-group td{border-top:2px solid var(--blk)}
 .tsmaster tr.ot-row td{background:#FAF1DC}
@@ -809,7 +810,7 @@ td.lvcal-prev{outline:2px dashed var(--accent);outline-offset:-2px}
 .spend-pop .sp-note{color:var(--dkgrey);font-size:10.5px;line-height:1.45;margin-top:8px}
 </style>
 </head><body>
-<div id="app"></div><div id="note-popover-container"></div><div id="plan-popover-container"></div><div id="plan-ms-popover-container"></div><div id="plan-choice-container"></div><div id="plan-ph-popover-container"></div><div id="plan-breakdown-container"></div><div id="plan-color-container"></div><div id="team-add-container"></div><div id="confirm-modal-container"></div><div id="unsaved-modal-container"></div><div id="office-wide-container"></div><div id="rate-modal-container"></div><div id="cpd-modal-container"></div><div id="crm-modal-container"></div><div id="leave-modal-container"></div><div id="inc-popover-container"></div><div id="inc-lik-container"></div><div id="inv-lik-container"></div><div id="fp-pop-container"></div><div id="ts-due-container"></div>
+<div id="app"></div><div id="ts-chg-container"></div><div id="note-popover-container"></div><div id="plan-popover-container"></div><div id="plan-ms-popover-container"></div><div id="plan-choice-container"></div><div id="plan-ph-popover-container"></div><div id="plan-breakdown-container"></div><div id="plan-color-container"></div><div id="team-add-container"></div><div id="confirm-modal-container"></div><div id="unsaved-modal-container"></div><div id="office-wide-container"></div><div id="rate-modal-container"></div><div id="cpd-modal-container"></div><div id="crm-modal-container"></div><div id="leave-modal-container"></div><div id="inc-popover-container"></div><div id="inc-lik-container"></div><div id="inv-lik-container"></div><div id="fp-pop-container"></div><div id="ts-due-container"></div>
 <script>
 // ── Supabase backend ──────────────────────────────────────────────────────────
 const SB_URL='https://bwkeesuiiqmmjiwsyvtg.supabase.co';
@@ -823,8 +824,8 @@ const STORE_KEY='amn_tracker_v1';
 // The newest build anyone opens records its number in the shared state
 // (st.meta.appBuild); a copy whose APP_BUILD is lower shows a "reopen from
 // your bookmark" banner. APP_VERSION_LABEL is the human-facing date, display only.
-const APP_BUILD=56;
-const APP_VERSION_LABEL='16 Oct 2026';
+const APP_BUILD=59;
+const APP_VERSION_LABEL='22 Oct 2026';
 // The portal's one door since the SharePoint copy was retired (Joe, 5 Sep 2026).
 // Both the stale-copy banner and the sidebar tooltip read from these, so the
 // address is written once. If Pages ever moves, change it here only.
@@ -846,7 +847,7 @@ let _sbPollTimer=null;
 let _syncState='saved';
 
 // Every persisted top-level key (currentUser is session-only and NEVER goes here)
-const SB_STATE_KEYS=['meta','users','projects','clients','entries','forecasts','submissions','userProjects','userStages','tsWeekRows','cellNotes','overtime','nbOvertime','leave','leaveActive','nonBillable','nonBillableActive','planAssignments','feePlans','planRows','milestones','leaveRows','nbRows','placeholders','planProjectRows','planStageRows','trash','cpd','cpdNotices','cpdArbTopics','crmOrgs','crmContacts','crmInteractions','crmActions','crmLeads','crmEvents','crmSectors','crmRoles','leaveRequests','leaveAllowances','leaveClosures','leaveCarry','leaveYearNotes','leaveNotices','projectMembers'];
+const SB_STATE_KEYS=['meta','users','projects','clients','entries','forecasts','submissions','userProjects','userStages','tsWeekRows','cellNotes','overtime','nbOvertime','leave','leaveActive','nonBillable','nonBillableActive','planAssignments','feePlans','planRows','milestones','leaveRows','nbRows','placeholders','planProjectRows','planStageRows','trash','cpd','cpdNotices','cpdArbTopics','crmOrgs','crmContacts','crmInteractions','crmActions','crmLeads','crmEvents','crmSectors','crmRoles','leaveRequests','leaveAllowances','leaveClosures','leaveCarry','leaveYearNotes','leaveNotices','projectMembers','tsChangeRequests'];
 // Keys that are objects keyed by compound strings — merged per sub-key so two
 // people editing different cells never clobber each other.
 const SB_MAP_KEYS=['meta','entries','forecasts','submissions','userProjects','userStages','tsWeekRows','cellNotes','overtime','nbOvertime','leave','leaveActive','nonBillable','nonBillableActive','planRows','planStageRows','leaveAllowances','leaveCarry','leaveYearNotes','projectMembers'];
@@ -1013,7 +1014,7 @@ function isTyping(){
 // have explicit reverse actions and affect other people's workflows.
 const UNDO_MAX=50;
 let _undoBase=null,_undoStack=[],_redoStack=[],_undoSuppress=false,_undoPending=false,_undoPendingSuppress=false;
-const UNDO_NAMES={meta:'settings',feePlans:'fee plan',entries:'timesheet hours',overtime:'timesheet hours',nbOvertime:'timesheet hours',leave:'leave hours',nonBillable:'non-billable hours',forecasts:'forecast',planAssignments:'forecast',planRows:'forecast rows',planProjectRows:'forecast rows',planStageRows:'forecast rows',leaveRows:'forecast rows',nbRows:'forecast rows',milestones:'milestones',placeholders:'placeholders',users:'team',projects:'projects',clients:'clients',cellNotes:'notes',submissions:'timesheet submission',userProjects:'timesheet rows',userStages:'timesheet rows',tsWeekRows:'timesheet rows',leaveActive:'timesheet rows',nonBillableActive:'timesheet rows',cpd:'CPD',cpdNotices:'CPD notices',cpdArbTopics:'CPD settings',trash:'deleted items',leaveRequests:'leave',leaveAllowances:'leave allowances',leaveClosures:'office closures',leaveCarry:'leave carry-over',leaveYearNotes:'leave notes',leaveNotices:'leave notices',projectMembers:'project team',crmOrgs:'CRM',crmContacts:'CRM',crmInteractions:'CRM',crmActions:'CRM actions',crmLeads:'CRM',crmEvents:'CRM events',crmSectors:'CRM settings',crmRoles:'CRM settings'};
+const UNDO_NAMES={meta:'settings',feePlans:'fee plan',entries:'timesheet hours',overtime:'timesheet hours',nbOvertime:'timesheet hours',leave:'leave hours',nonBillable:'non-billable hours',forecasts:'forecast',planAssignments:'forecast',planRows:'forecast rows',planProjectRows:'forecast rows',planStageRows:'forecast rows',leaveRows:'forecast rows',nbRows:'forecast rows',milestones:'milestones',placeholders:'placeholders',users:'team',projects:'projects',clients:'clients',cellNotes:'notes',submissions:'timesheet submission',userProjects:'timesheet rows',userStages:'timesheet rows',tsWeekRows:'timesheet rows',leaveActive:'timesheet rows',nonBillableActive:'timesheet rows',cpd:'CPD',cpdNotices:'CPD notices',cpdArbTopics:'CPD settings',trash:'deleted items',leaveRequests:'leave',leaveAllowances:'leave allowances',leaveClosures:'office closures',leaveCarry:'leave carry-over',leaveYearNotes:'leave notes',leaveNotices:'leave notices',tsChangeRequests:'timesheet change requests',projectMembers:'project team',crmOrgs:'CRM',crmContacts:'CRM',crmInteractions:'CRM',crmActions:'CRM actions',crmLeads:'CRM',crmEvents:'CRM events',crmSectors:'CRM settings',crmRoles:'CRM settings'};
 function undoLabelFor(diff){
   const ks=new Set();
   for(const g of['maps','arrays','replace'])for(const k in (diff[g]||{}))ks.add(UNDO_NAMES[k]||k);
@@ -1340,7 +1341,7 @@ function loadLocalState(){try{const r=localStorage.getItem(STORE_KEY);return r?J
 const LOGO='data:image/png;base64,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';
 const LOGIN_LOGO=`<img src="${LOGO}" style="height:48px;margin-bottom:24px;display:block;border-radius:10px" alt="amn" onerror="this.outerHTML='<div style=\'font-family:Figtree,sans-serif;font-size:20px;font-weight:300;margin-bottom:28px\'>amn architects</div>'"/>`;
 
-let st={meta:{},users:[],projects:[],clients:[],entries:{},forecasts:{},submissions:{},userProjects:{},userStages:{},tsWeekRows:{},cellNotes:{},overtime:{},nbOvertime:{},leave:{},leaveActive:{},nonBillable:{},nonBillableActive:{},planAssignments:[],feePlans:[],planRows:{},milestones:[],leaveRows:[],nbRows:[],placeholders:[],planProjectRows:[],planStageRows:{},trash:[],cpd:[],cpdNotices:[],cpdArbTopics:['Fire and life safety','Environmental sustainability'],crmOrgs:[],crmContacts:[],crmInteractions:[],crmActions:[],crmLeads:[],crmEvents:[],crmSectors:null,crmRoles:null,leaveRequests:[],leaveAllowances:{},leaveClosures:[],leaveCarry:{},leaveYearNotes:{},leaveNotices:[],projectMembers:{},currentUser:null,_tab:'home',_projSort:{by:'code',dir:'asc'},_projAddOpen:false};
+let st={meta:{},users:[],projects:[],clients:[],entries:{},forecasts:{},submissions:{},userProjects:{},userStages:{},tsWeekRows:{},cellNotes:{},overtime:{},nbOvertime:{},leave:{},leaveActive:{},nonBillable:{},nonBillableActive:{},planAssignments:[],feePlans:[],planRows:{},milestones:[],leaveRows:[],nbRows:[],placeholders:[],planProjectRows:[],planStageRows:{},trash:[],cpd:[],cpdNotices:[],cpdArbTopics:['Fire and life safety','Environmental sustainability'],crmOrgs:[],crmContacts:[],crmInteractions:[],crmActions:[],crmLeads:[],crmEvents:[],crmSectors:null,crmRoles:null,leaveRequests:[],leaveAllowances:{},leaveClosures:[],leaveCarry:{},leaveYearNotes:{},leaveNotices:[],tsChangeRequests:[],projectMembers:{},currentUser:null,_tab:'home',_projSort:{by:'code',dir:'asc'},_projAddOpen:false};
 let wkOff=0,projTempFilter='',homeHealthIdx=0,healthProj=null,healthSection='finance',healthChartView='week',planColorState=null,viewingUser=null,openActionMenu=null,editingProj=null,expandedStage=null,expandedNotes=new Set(),editingSubmitted=new Set(),activeNoteCell=null;
 // Edit-project modal: which sections are open, and a draft of typed-but-unsaved
 // input values (harvested on every section toggle so collapsing never loses text).
@@ -1449,7 +1450,7 @@ function applyGuards(){
   // Legacy 'notes' (all Harvest fee history) -> feeNotes; projNotes is the new PM-visible field.
   for(const p of st.projects||[]){if(p.notes&&!p.feeNotes){p.feeNotes=p.notes;}if('notes'in p)delete p.notes;if(typeof p.feeNotes!=='string')p.feeNotes=p.feeNotes||'';if(typeof p.projNotes!=='string')p.projNotes=p.projNotes||'';for(const _mk of['address','description','roleDesc'])if(typeof p[_mk]!=='string')p[_mk]=p[_mk]||'';if(!p.features||typeof p.features!=='object')p.features={};for(const _fk of PROJ_FEATURES)if(typeof p.features[_fk.k]!=='boolean')p.features[_fk.k]=false;if(typeof p.comments==='string'&&p.comments.trim()&&!(p.projNotes||'').includes(p.comments.trim())){p.projNotes=((p.projNotes||'').trim()?p.projNotes.trim()+'\n\n':'')+p.comments.trim();}if('comments'in p)delete p.comments;ensureRibaStages(p);for(const ph of p.phases||[])if('likelihood'in ph&&![100,40,10,0].includes(ph.likelihood))delete ph.likelihood;normProjInvoices(p);}
   for(const e of st.cpd||[]){if(!Array.isArray(e.speakers))e.speakers=[];}
-  ['users','projects','clients','planAssignments','feePlans','milestones','leaveRows','nbRows','placeholders','planProjectRows','trash','cpd','cpdNotices','crmOrgs','crmContacts','crmInteractions','crmActions','crmLeads','crmEvents','leaveRequests','leaveClosures','leaveNotices'].forEach(k=>{if(!Array.isArray(st[k]))st[k]=[];});
+  ['users','projects','clients','planAssignments','feePlans','milestones','leaveRows','nbRows','placeholders','planProjectRows','trash','cpd','cpdNotices','crmOrgs','crmContacts','crmInteractions','crmActions','crmLeads','crmEvents','leaveRequests','leaveClosures','leaveNotices','tsChangeRequests'].forEach(k=>{if(!Array.isArray(st[k]))st[k]=[];});
   st.leaveRequests.forEach(normLeaveReq);
   // Approved leave that was silently skipped over submitted weeks (old behaviour)
   // is re-applied: the new applyLeaveTime reopens those weeks and writes the hours.
@@ -1467,7 +1468,7 @@ function applyGuards(){
     st.projectMembers={};
     for(const[person,projs]of Object.entries(st.userProjects||{})){
       const u=st.users.find(x=>x.name===person);
-      if(!u||u.role==='admin'||u.role==='pm')continue;
+      if(!u||u.role==='admin'||u.role==='director'||u.role==='pm')continue;
       for(const pn of (projs||[])){
         if(!st.projectMembers[pn])st.projectMembers[pn]=[];
         if(!st.projectMembers[pn].includes(person))st.projectMembers[pn].push(person);
@@ -1505,6 +1506,15 @@ function applyGuards(){
   st.cpd.forEach(normCpd);ensureCpdRefs();
   if(!Array.isArray(st.cpdArbTopics)||!st.cpdArbTopics.length)st.cpdArbTopics=['Fire and life safety','Environmental sustainability'];
   st.users.forEach(u=>{if(!u.role)u.role=u.isAdmin?'admin':'member';if(typeof u.selfApproveLeave!=='boolean')u.selfApproveLeave=false;if(typeof u.startDate!=='string')u.startDate='';if(typeof u.birthday!=='string')u.birthday='';});
+  // Build 57: the Director level. Once, Joe and Anne-Marie are promoted from admin.
+  // Every load also checks the practice has an active director: a stale (build 56)
+  // tab saving the old roles back must not lock everyone out of the Team page.
+  if(st.users.length&&(!st.meta.directorsV1||!st.users.some(x=>x.role==='director'&&!x.deactivated))){
+    const _first=!st.meta.directorsV1;
+    for(const n of DIRECTOR_SEED){const x=st.users.find(y=>y.name===n&&!y.deactivated);if(x&&x.role==='admin'){x.role='director';if(_first)x.selfApproveLeave=true;}}
+    if(!st.users.some(x=>x.role==='director'&&!x.deactivated)){const f=st.users.find(x=>x.role==='admin'&&!x.deactivated);if(f)f.role='director';}
+    st.meta.directorsV1=true;
+  }
   st.leaveRequests.forEach(r=>{if(!r.type)r.type='Annual leave';if(!r.halfDays||typeof r.halfDays!=='object')r.halfDays=(r.halfDay?{[r.startDate]:true}:{});delete r.halfDay;if(!Array.isArray(r.timeWrites))r.timeWrites=[];if(!Array.isArray(r.timeSkipped))r.timeSkipped=[];if(typeof r.adminNote!=='string')r.adminNote='';if(typeof r.adminActionDue!=='string')r.adminActionDue='';if(typeof r.adminActionDone!=='boolean')r.adminActionDone=false;if(!r.source)r.source='leave';});
   st.planAssignments.forEach(a=>{
     if(!a.startDate&&a.startWk){a.startDate=isoDate(planWkToDate(a.startWk));a.endDate=isoDate(addDays(planWkToDate(a.endWk),4));delete a.startWk;delete a.endWk;}
@@ -1715,14 +1725,15 @@ function pendingLeaveOverlapsWeek(person,wk){
   const s=isoDate(mon),e=isoDate(sun);
   return st.leaveRequests.some(r=>r.person===person&&r.status==='pending'&&r.startDate<=e&&r.endDate>=s);
 }
-// Approval rule: nobody approves their own leave, unless flagged selfApproveLeave
-// (Anne-Marie) or they are the only active admin.
+// Approval rule (build 57): leave and sickness are HR matters, so only a director
+// decides a request. A director decides their own only if they have self-approval
+// switched on (Leave page, edit person) or they are the only active director.
 function canApproveLeave(r){
-  if(!isAdmin())return false;
+  if(!isDirector())return false;
   if(r.person!==st.currentUser)return true;
   const u=cur();
   if(u&&u.selfApproveLeave)return true;
-  return st.users.filter(x=>x.role==='admin'&&!x.deactivated).length<2;
+  return st.users.filter(x=>x.role==='director'&&!x.deactivated).length<2;
 }
 // Approved leave writes the request's own type into the timesheet per open day —
 // withdraw-then-rewrite, idempotent. Days before timeFloor (imports) are records only.
@@ -1782,6 +1793,151 @@ function leaveNoticeBanner(){
   if(!ns.length)return'';
   return ns.map(n=>`<div class="notice" style="display:flex;justify-content:space-between;align-items:center;gap:10px"><span>${escAttr(n.text)}</span><button class="btn btn-sm" onclick="dismissLeaveNotice('${n.id}')">OK</button></div>`).join('');
 }
+// ── Timesheet change requests (build 57) ──────────────────────────────────────
+// An admin cannot edit someone else's timesheet. They may ask for changes: the
+// person sees exactly what would change and accepts or declines. A director
+// edits directly and does not need this.
+const TSCHG_DAYS=['Mon','Tue','Wed','Thu','Fri'];
+let tsChgDraft=null;
+function canRequestTsChange(person){return !!cur()&&isAdmin()&&!isDirector()&&person!==cur().name&&st.users.some(u=>u.name===person&&!u.deactivated);}
+function tsChgFor(person){return (st.tsChangeRequests||[]).filter(r=>r.person===person&&r.status==='pending');}
+function tsChgFeedback(by){return (st.tsChangeRequests||[]).filter(r=>r.by===by&&(r.status==='accepted'||r.status==='declined')&&!r.ack);}
+function tsChgSent(by){return (st.tsChangeRequests||[]).filter(r=>r.by===by&&r.status==='pending');}
+function tsChgCurrent(r,c){return c.kind==='nb'?gNB(r.wk,c.type,r.person,c.day):(parseFloat(gE(r.wk,c.pj,c.ph,r.person,c.day))||0);}
+function tsChgH(n){return (Math.round((+n||0)*100)/100)+'h';}
+function tsChgValid(r,c){
+  if(!c||!Number.isInteger(c.day)||c.day<0||c.day>4)return false;
+  const to=Number(c.to);if(!(to>=0&&to<=16))return false;
+  if(c.kind==='nb')return NB_TYPES.includes(c.type);
+  if(c.kind!=='proj')return false;
+  const p=st.projects.find(x=>x.name===c.pj);if(!p)return false;
+  const ph=(p.phases||[]).find(x=>x.name===c.ph);if(!ph)return false;
+  if(to>0&&(p.archived||ph.active===false||!canLogToProject(r.person,c.pj)))return false;
+  return true;
+}
+function tsChgLine(r,c){
+  const day=`${TSCHG_DAYS[c.day]} ${fmt(addDays(planWkToDate(r.wk),c.day))}`;
+  const row=c.kind==='nb'?`Non-billable, ${c.type}`:`${c.pj}, ${c.ph}`;
+  const from=r.status==='pending'?tsChgCurrent(r,c):c.from;
+  return `${day}: ${row}, ${tsChgH(from)} to ${tsChgH(c.to)}`;
+}
+function tsChgBannerHTML(viewTarget){
+  if(!cur())return'';
+  const me=cur().name;let h='';
+  const wkTxt=r=>fmtLong(planWkToDate(r.wk));
+  const box=(inner,btns)=>`<div class="notice tschg-note" style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px"><div style="flex:1">${inner}</div><div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">${btns}</div></div>`;
+  if(!viewTarget){
+    for(const r of tsChgFor(me)){
+      h+=box(`<b>${escAttr(r.by)}</b> has asked for changes to your timesheet for the week of ${wkTxt(r)}.${r.message?` <i>“${escAttr(r.message)}”</i>`:''}<ul style="margin:6px 0 0 18px;padding:0">${r.changes.map(c=>`<li>${escAttr(tsChgLine(r,c))}</li>`).join('')}</ul><div style="margin-top:6px;font-size:11px">Nothing changes until you accept.${st.submissions[`${me}||${r.wk}`]?' That week is submitted; accepting reopens it for you to check and submit again.':''}</div>`,
+        `<button class="btn btn-sm" onclick="tsChgOpen('${r.id}')">Open week</button><button class="btn btn-sm" onclick="tsChgDecline('${r.id}')">Decline</button><button class="btn btn-sm btn-primary" onclick="tsChgAccept('${r.id}')">Accept</button>`);
+    }
+  }
+  for(const r of tsChgFeedback(me))h+=box(`<b>${escAttr(r.person)}</b> ${r.status==='accepted'?'accepted':'declined'} your change request for the week of ${wkTxt(r)}.${r.status==='accepted'&&r.reopened?' Their submitted week was reopened.':''}`,`<button class="btn btn-sm" onclick="tsChgAck('${r.id}')">OK</button>`);
+  if(viewTarget)for(const r of tsChgSent(me).filter(x=>x.person===viewTarget))h+=box(`Your change request for the week of ${wkTxt(r)} is waiting for ${escAttr(r.person)} to accept or decline (${r.changes.length} change${r.changes.length===1?'':'s'}).`,`<button class="btn btn-sm" onclick="tsChgWithdraw('${r.id}')">Withdraw</button>`);
+  return h;
+}
+window.tsChgOpen=function(id){const r=(st.tsChangeRequests||[]).find(x=>x.id===id);if(!r||r.person!==st.currentUser)return;viewingUser=null;st._tab='log';wkOff=tsWkOffset(r.wk);render();}
+window.tsChgAccept=function(id){
+  const r=(st.tsChangeRequests||[]).find(x=>x.id===id);
+  if(!r||r.status!=='pending'||r.person!==st.currentUser)return;
+  let applied=0;
+  noUndo(()=>{
+    for(const c of r.changes){
+      if(!tsChgValid(r,c))continue;
+      if(c.kind==='nb'){addNBActive(r.wk,r.person,c.type);sNB(r.wk,c.type,r.person,c.day,c.to);}
+      else sE(r.wk,c.pj,c.ph,r.person,c.day,c.to);
+      applied++;
+    }
+    const key=`${r.person}||${r.wk}`;
+    if(applied&&st.submissions[key]){delete st.submissions[key];r.reopened=true;}
+    r.status='accepted';r.applied=applied;r.decidedAt=new Date().toISOString();r.ack=false;
+    save();
+  });
+  render();
+  if(typeof undoToast==='function')undoToast(applied===r.changes.length?'Changes accepted.':`${applied} of ${r.changes.length} changes accepted; the rest could not be applied.`);
+}
+window.tsChgDecline=function(id){
+  const r=(st.tsChangeRequests||[]).find(x=>x.id===id);
+  if(!r||r.status!=='pending'||r.person!==st.currentUser)return;
+  noUndo(()=>{r.status='declined';r.decidedAt=new Date().toISOString();r.ack=false;save();});render();
+}
+window.tsChgAck=function(id){const r=(st.tsChangeRequests||[]).find(x=>x.id===id);if(!r||r.by!==st.currentUser)return;noUndo(()=>{r.ack=true;save();});render();}
+window.tsChgWithdraw=function(id){
+  const r=(st.tsChangeRequests||[]).find(x=>x.id===id);
+  if(!r||r.status!=='pending'||r.by!==st.currentUser)return;
+  noUndo(()=>{st.tsChangeRequests=st.tsChangeRequests.filter(x=>x.id!==id);save();});render();
+}
+window.openTsChg=function(){
+  const person=viewingUser;
+  if(!person||!canRequestTsChange(person)||wkOff>0)return;
+  const wk=wkKey(getWkDates(wkOff));const rows=[];
+  for(const pj of tsProjectsForWeek(wk,person)){if(!st.projects.some(p=>p.name===pj))continue;for(const ph of tsStagesForWeek(wk,person,pj))rows.push({kind:'proj',pj,ph});}
+  for(const t of getNBActive(wk,person))rows.push({kind:'nb',type:t});
+  tsChgDraft={person,wk,rows,vals:{},msg:'',err:'',addPj:''};
+  renderTsChg();
+}
+window.closeTsChg=function(){tsChgDraft=null;renderTsChg();}
+window.tsChgSet=function(ri,d,v){if(tsChgDraft)tsChgDraft.vals[ri+'|'+d]=v;}
+window.tsChgMsg=function(v){if(tsChgDraft)tsChgDraft.msg=v;}
+window.tsChgPickProj=function(v){if(!tsChgDraft)return;tsChgDraft.addPj=v;renderTsChg();}
+window.tsChgAddRow=function(){
+  const d=tsChgDraft;if(!d)return;
+  const pj=(document.getElementById('tsc-addpj')||{}).value,ph=(document.getElementById('tsc-addph')||{}).value,nb=(document.getElementById('tsc-addnb')||{}).value;
+  if(nb){if(!d.rows.some(r=>r.kind==='nb'&&r.type===nb)&&NB_TYPES.includes(nb))d.rows.push({kind:'nb',type:nb});}
+  else if(pj&&ph){if(!d.rows.some(r=>r.kind==='proj'&&r.pj===pj&&r.ph===ph)&&canLogToProject(d.person,pj))d.rows.push({kind:'proj',pj,ph});}
+  d.addPj='';renderTsChg();
+}
+window.sendTsChg=function(){
+  const d=tsChgDraft;if(!d||!canRequestTsChange(d.person))return;
+  const changes=[];let bad=false;
+  d.rows.forEach((row,ri)=>{for(let day=0;day<5;day++){
+    const k=ri+'|'+day;if(!(k in d.vals))continue;
+    const raw=String(d.vals[k]).trim(),to=raw===''?0:parseFloat(raw);
+    if(isNaN(to)||to<0||to>16){bad=true;continue;}
+    const probe={wk:d.wk,person:d.person};
+    const from=row.kind==='nb'?gNB(d.wk,row.type,d.person,day):(parseFloat(gE(d.wk,row.pj,row.ph,d.person,day))||0);
+    if(Math.abs(to-from)<0.001)continue;
+    changes.push(row.kind==='nb'?{kind:'nb',type:row.type,day,from,to}:{kind:'proj',pj:row.pj,ph:row.ph,day,from,to});
+  }});
+  if(bad){d.err='Hours must be between 0 and 16.';renderTsChg();return;}
+  if(!changes.length){d.err='Change at least one box before sending.';renderTsChg();return;}
+  const r={id:'tc'+Date.now()+Math.floor(Math.random()*1000),person:d.person,wk:d.wk,by:st.currentUser,message:String(d.msg||'').trim().slice(0,500),changes,status:'pending',at:new Date().toISOString(),ack:false};
+  if(!changes.every(c=>tsChgValid(r,c))){d.err='One of those changes is not allowed (an archived project or an inactive stage).';renderTsChg();return;}
+  noUndo(()=>{st.tsChangeRequests.push(r);save();});
+  tsChgDraft=null;render();
+  if(typeof undoToast==='function')undoToast(`Request sent to ${r.person}.`);
+}
+function renderTsChg(){
+  const el=document.getElementById('ts-chg-container');if(!el)return;
+  const d=tsChgDraft;
+  if(d&&(!cur()||!canRequestTsChange(d.person)))tsChgDraft=null;
+  if(!tsChgDraft||mobMode()){el.innerHTML='';return;}
+  const dr=tsChgDraft,days=Array.from({length:5},(_,i)=>addDays(planWkToDate(dr.wk),i));
+  const body=dr.rows.map((row,ri)=>`<tr><td style="font-size:12px;font-weight:600;white-space:nowrap">${escAttr(row.kind==='nb'?'Non-billable: '+row.type:row.pj+': '+row.ph)}</td>${days.map((_,i)=>{const k=ri+'|'+i;const cur0=row.kind==='nb'?gNB(dr.wk,row.type,dr.person,i):(parseFloat(gE(dr.wk,row.pj,row.ph,dr.person,i))||0);const v=(k in dr.vals)?dr.vals[k]:(cur0||'');return `<td style="padding:2px"><input type="number" class="tinput" min="0" max="16" step="0.5" value="${escAttr(String(v))}" oninput="tsChgSet(${ri},${i},this.value)" style="width:54px"/></td>`;}).join('')}</tr>`).join('');
+  const pool=st.projects.filter(p=>!p.archived&&(p.phases||[]).some(ph=>ph.active!==false)&&canLogToProject(dr.person,p.name)).sort((a,b)=>a.name.localeCompare(b.name));
+  const selP=pool.find(p=>p.name===dr.addPj);
+  const nbFree=NB_TYPES.filter(t=>!dr.rows.some(r=>r.kind==='nb'&&r.type===t));
+  el.innerHTML=`<div class="modal-overlay" onclick="if(event.target===this&&window._ovMd===this)closeTsChg()">
+    <div class="modal-box" onclick="event.stopPropagation()" style="width:720px;max-width:94vw">
+      <div class="note-popover-hdr"><span>Request a change: ${escAttr(dr.person)}, week of ${fmtLong(planWkToDate(dr.wk))}</span><button onclick="closeTsChg()" title="Close" style="background:none;border:none;cursor:pointer;font-size:14px;font-weight:700;color:var(--dkgrey)">×</button></div>
+      <div style="padding:16px;max-height:76vh;overflow:auto">
+        <p style="font-size:11px;color:var(--dkgrey);margin:0 0 10px;line-height:1.5">Change the hours you would like to see. ${escAttr(dr.person)} will be shown exactly what would change and decides whether to accept. Only boxes you change are sent.</p>
+        <table class="rtable" style="margin:0 0 10px"><thead><tr><th>Row</th>${days.map((x,i)=>`<th style="text-align:center">${TSCHG_DAYS[i]}<br><span style="font-weight:400;font-size:10px">${fmt(x)}</span></th>`).join('')}</tr></thead><tbody>${body||`<tr><td colspan="6" style="color:var(--dkgrey);font-size:12px">No rows on this timesheet yet. Add one below.</td></tr>`}</tbody></table>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:12px;font-size:12px">
+          <span style="color:var(--dkgrey)">Add a row:</span>
+          <select id="tsc-addpj" onchange="tsChgPickProj(this.value)" style="font-size:11px;width:auto;max-width:230px"><option value="">Project…</option>${pool.map(p=>`<option value="${escAttr(p.name)}" ${p.name===dr.addPj?'selected':''}>${escAttr(p.name)}</option>`).join('')}</select>
+          <select id="tsc-addph" style="font-size:11px;width:auto"><option value="">Stage…</option>${selP?(selP.phases||[]).filter(ph=>ph.active!==false).map(ph=>`<option value="${escAttr(ph.name)}">${escAttr(ph.name)}</option>`).join(''):''}</select>
+          <select id="tsc-addnb" style="font-size:11px;width:auto"><option value="">or non-billable…</option>${nbFree.map(t=>`<option value="${escAttr(t)}">${escAttr(t)}</option>`).join('')}</select>
+          <button class="btn btn-sm" onclick="tsChgAddRow()">Add</button>
+        </div>
+        <label style="font-size:11px;font-weight:600;color:var(--dkgrey);display:block;margin-bottom:3px">Message (optional)</label>
+        <textarea oninput="tsChgMsg(this.value)" maxlength="500" rows="2" placeholder="Why the change is needed" style="width:100%;box-sizing:border-box">${escAttr(dr.msg||'')}</textarea>
+        ${dr.err?`<div style="color:var(--danger);font-size:12px;font-weight:600;margin-top:8px">${escAttr(dr.err)}</div>`:''}
+        <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px"><button class="btn btn-sm" onclick="closeTsChg()">Cancel</button><button class="btn btn-sm btn-primary" onclick="sendTsChg()">Send request</button></div>
+      </div>
+    </div>
+  </div>`;
+}
 // Shared creation path: balance check for AL, self-approve shortcut, on-behalf notices.
 function createLeaveRequest(person,type,startDate,endDate,halfDays,note,source){
   const r={id:'lr'+Date.now()+Math.floor(Math.random()*1000),person,type,startDate,endDate,halfDays:halfDays||{},note:note||'',adminNote:'',adminActionDue:'',adminActionDone:false,status:'pending',source:source||'leave',requestedAt:new Date().toISOString(),requestedBy:st.currentUser,timeWrites:[],timeSkipped:[]};
@@ -1791,7 +1947,7 @@ function createLeaveRequest(person,type,startDate,endDate,halfDays,note,source){
   }
   const onBehalf=person!==st.currentUser;
   if(onBehalf){
-    if(!isAdmin())return{error:'Only an admin can record leave for someone else.'};
+    if(!isDirector())return{error:'Only a director can record leave for someone else.'};
     r.status='approved';r.decidedBy=st.currentUser;r.decidedAt=new Date().toISOString();
     st.leaveRequests.push(r);
     applyLeaveTime(r);
@@ -1800,7 +1956,7 @@ function createLeaveRequest(person,type,startDate,endDate,halfDays,note,source){
     return{request:r};
   }
   const u=cur();
-  if(isAdmin()&&u&&u.selfApproveLeave){
+  if(isDirector()&&u&&u.selfApproveLeave){
     r.status='approved';r.decidedBy=st.currentUser;r.decidedAt=new Date().toISOString();
     st.leaveRequests.push(r);
     applyLeaveTime(r);
@@ -1832,13 +1988,14 @@ window.declineLeave=function(id){
   if(!canApproveLeave(r))return;
   noUndo(()=>{
     r.status='declined';r.decidedBy=st.currentUser;r.decidedAt=new Date().toISOString();
+    if(r.person!==st.currentUser)pushLeaveNotice(r.person,r.id,`Your ${r.type.toLowerCase()} request (${fmt(parseISO(r.startDate))}${r.startDate!==r.endDate?' – '+fmt(parseISO(r.endDate)):''}) was declined. Those days count as working days, so please fill in your timesheet for them.`);
     save();
   });
   render();
 }
 window.cancelLeave=function(id){
   const r=st.leaveRequests.find(x=>x.id===id);if(!r)return;
-  if(r.person!==st.currentUser&&!isAdmin())return;
+  if(r.person!==st.currentUser&&!isDirector())return;
   if(r.status==='approved'){
     openConfirmModal('Cancel approved leave',`Cancel ${escAttr(r.person)}'s approved ${escAttr(r.type)} ${fmt(parseISO(r.startDate))} – ${fmt(parseISO(r.endDate))}? Any booked hours are withdrawn from the timesheet${r.type==='Annual leave'?' and the days return to the allowance':''}.`,'cancel leave','doCancelLeave',[id]);
     return;
@@ -1852,21 +2009,21 @@ window.doCancelLeave=function(id){
   r.status='cancelled';
   applyLeaveTime(r);
   st.leaveRequests=st.leaveRequests.filter(x=>x.id!==id);
-  if(wasApproved&&r.person!==st.currentUser&&isAdmin())pushLeaveNotice(r.person,r.id,`${st.currentUser} cancelled your ${r.type} (${fmt(parseISO(r.startDate))}${r.startDate!==r.endDate?' – '+fmt(parseISO(r.endDate)):''}).`);
+  if(wasApproved&&r.person!==st.currentUser&&isDirector())pushLeaveNotice(r.person,r.id,`${st.currentUser} cancelled your ${r.type} (${fmt(parseISO(r.startDate))}${r.startDate!==r.endDate?' – '+fmt(parseISO(r.endDate)):''}).`);
   save();render();
 }
 window.setLeaveAdminNote=function(id,val){
-  if(!isAdmin())return;
+  if(!isDirector())return;
   const r=st.leaveRequests.find(x=>x.id===id);if(!r)return;
   r.adminNote=val;save();
 }
 window.setLeaveActionDue=function(id,val){
-  if(!isAdmin())return;
+  if(!isDirector())return;
   const r=st.leaveRequests.find(x=>x.id===id);if(!r)return;
   r.adminActionDue=val||'';save();
 }
 window.markLeaveActionDone=function(id){
-  if(!isAdmin())return;
+  if(!isDirector())return;
   const r=st.leaveRequests.find(x=>x.id===id);if(!r)return;
   r.adminActionDone=true;save();render();
 }
@@ -1877,7 +2034,7 @@ window.doAddLeaveClosure=function(label,s,e){
   save();render();
 }
 window.rmLeaveClosure=function(id){
-  if(!isAdmin())return;
+  if(!isDirector())return;
   const c=st.leaveClosures.find(x=>x.id===id);if(!c)return;
   openConfirmModal('Remove office closure',`Remove "${escAttr(c.label)}"? The booked hours are withdrawn and the days return to everyone's allowance.`,'remove','doRmLeaveClosure',[id]);
 }
@@ -1887,7 +2044,7 @@ window.doRmLeaveClosure=function(id){
   save();render();
 }
 window.lvCalAdd=function(person,iso,ev){
-  if(!isAdmin()&&person!==st.currentUser)return;
+  if(!isDirector()&&person!==st.currentUser)return;
   openLeaveModal({person,start:iso,end:iso});
 }
 window.leaveCalNav=function(dir){leaveCalOff+=dir;render();}
@@ -1923,7 +2080,7 @@ window.lvBarClick=function(person,iso){
   if(_lvSwallowClick){_lvSwallowClick=false;return;}
   const r=st.leaveRequests.find(x=>x.person===person&&x.startDate===iso&&(x.status==='approved'||x.status==='pending'))||reqCoveringAny(person,iso);
   if(!r)return; // bank-holiday auto bookings have no request behind them
-  if(!isAdmin()&&person!==st.currentUser)return;
+  if(!isDirector()&&person!==st.currentUser)return;
   leaveModalState={mode:'view',id:r.id};renderLeaveModal();
 }
 window.submitLeaveModal=function(){
@@ -1935,7 +2092,7 @@ window.submitLeaveModal=function(){
   if(end<start){err.textContent='The end date is before the start date.';err.style.display='block';return;}
   if(openDaysIn(start,end)===0){err.textContent='That range contains no working days (weekends and bank holidays are already off).';err.style.display='block';return;}
   if(s.person==='__office'){
-    if(!isAdmin())return;
+    if(!isDirector())return;
     const label=note||'Office closure';
     leaveModalState=null;renderLeaveModal();
     openConfirmModal('Add office closure',`Close the office "${escAttr(label)}" ${fmt(parseISO(start))} – ${fmt(parseISO(end))}? Annual leave is booked for every team member on each working day in the range and deducted from their allowance. Members cannot edit these bookings.`,'add closure','doAddLeaveClosure',[label,start,end]);
@@ -1962,7 +2119,7 @@ window.submitLeaveModal=function(){
   leaveModalState=null;render();
 }
 window.saveLeaveMember=function(person){
-  if(!isAdmin())return;
+  if(!isDirector())return;
   const year=new Date().getFullYear();
   const u=st.users.find(x=>x.name===person);if(!u)return;
   u.startDate=(document.getElementById('lvm-start').value||'');
@@ -1971,7 +2128,7 @@ window.saveLeaveMember=function(person){
   if(al===''||isNaN(parseFloat(al)))delete st.leaveAllowances[k];else st.leaveAllowances[k]=Math.round(parseFloat(al)*2)/2;
   const cy=document.getElementById('lvm-carry').value;
   if(cy===''||isNaN(parseFloat(cy)))delete st.leaveCarry[k];else st.leaveCarry[k]=Math.round(parseFloat(cy)*2)/2;
-  u.selfApproveLeave=document.getElementById('lvm-self').checked;
+  const _sa=document.getElementById('lvm-self');if(_sa)u.selfApproveLeave=_sa.checked;
   const yn=(document.getElementById('lvm-note').value||'').trim();
   if(yn)st.leaveYearNotes[k]=yn;else delete st.leaveYearNotes[k];
   leaveModalState=null;save();render();
@@ -1994,13 +2151,13 @@ function renderLeaveModal(){
       <tr><td>Days</td><td>${reqDays(r)}${halves.length?` <span style="font-size:10px;color:var(--grey)">(${halves.length} half day${halves.length===1?'':'s'})</span>`:''}</td></tr>
       <tr><td>Status</td><td>${r.status==='approved'?'<span class="badge badge-info">approved</span>':r.status==='pending'?'<span class="badge badge-warn">pending</span>':escAttr(r.status)}</td></tr>
       ${r.note?`<tr><td>Note</td><td style="font-size:11px">${escAttr(r.note)}</td></tr>`:''}
-      ${r.adminNote&&isAdmin()?`<tr><td>Admin note</td><td style="font-size:11px">${escAttr(r.adminNote)}</td></tr>`:''}
+      ${r.adminNote&&isDirector()?`<tr><td>Admin note</td><td style="font-size:11px">${escAttr(r.adminNote)}</td></tr>`:''}
       ${r.decidedBy?`<tr><td>Decided by</td><td style="font-size:11px">${escAttr(r.decidedBy)}</td></tr>`:''}
     </tbody></table>
     <div style="display:flex;gap:8px;margin-top:14px;justify-content:flex-end;flex-wrap:wrap">
       ${r.status==='pending'&&canApproveLeave(r)?`<button class="btn btn-sm btn-primary" onclick="closeLeaveModal();approveLeave('${r.id}')">Approve</button>
       <button class="btn btn-sm" onclick="closeLeaveModal();declineLeave('${r.id}')">Decline</button>`:''}
-      ${r.status==='pending'&&isAdmin()&&!canApproveLeave(r)?`<span style="font-size:10px;color:var(--grey);align-self:center">awaiting another admin</span>`:''}
+      ${r.status==='pending'&&isDirector()&&!canApproveLeave(r)?`<span style="font-size:10px;color:var(--grey);align-self:center">awaiting another admin</span>`:''}
       ${r.status!=='declined'?`<button class="btn btn-sm" onclick="lvViewToEdit('${r.id}')">Edit</button>
       <button class="btn btn-sm" style="color:var(--danger)" onclick="closeLeaveModal();cancelLeave('${r.id}')">Cancel leave</button>`:''}
       <button class="btn btn-sm btn-primary" onclick="closeLeaveModal()">Close</button>
@@ -2019,7 +2176,7 @@ function renderLeaveModal(){
         <div><label>Allowance ${year} (days)</label><input type="number" step="0.5" min="0" id="lvm-allow" value="${typeof explicitAl==='number'?explicitAl:''}" placeholder="auto: ${defaultAllowance(s.person,year)}" style="width:100%;box-sizing:border-box"/></div>
         <div><label>Carried into ${year}</label><input type="number" step="0.5" id="lvm-carry" value="${typeof explicitCy==='number'?explicitCy:''}" placeholder="auto: capped at 5" style="width:100%;box-sizing:border-box"/></div>
       </div>
-      <div style="margin-bottom:10px"><label style="display:inline-flex;align-items:center;gap:6px;font-size:12px"><input type="checkbox" id="lvm-self" ${u.selfApproveLeave?'checked':''}/> Can approve their own leave</label></div>
+      ${u.role==='director'?`<div style="margin-bottom:10px"><label style="display:inline-flex;align-items:center;gap:6px;font-size:12px"><input type="checkbox" id="lvm-self" ${u.selfApproveLeave?'checked':''}/> Can approve their own leave</label></div>`:''}
       <div style="margin-bottom:12px"><label>Year note (payroll reminders, TOIL, etc.)</label><input id="lvm-note" value="${escAttr(st.leaveYearNotes[k]||'')}" placeholder="e.g. 1 day TOIL for May BH working" style="width:100%;box-sizing:border-box"/></div>
       <div style="display:flex;gap:8px;justify-content:flex-end">
         <button class="btn btn-sm" onclick="closeLeaveModal()">Cancel</button>
@@ -2028,7 +2185,7 @@ function renderLeaveModal(){
   } else {
     title=s.editId?'Edit leave':'Add leave';
     const isOffice=s.person==='__office';
-    const personRow=isAdmin()
+    const personRow=isDirector()
       ?`<div style="margin-bottom:10px"><label>Who</label><select id="lv-person" style="width:100%" onchange="lvModalPersonChange(this.value)">
           ${st.users.filter(u=>!u.deactivated).map(u=>`<option ${s.person===u.name?'selected':''} value="${escAttr(u.name)}">${escAttr(u.name)}${u.name===me?' (me)':''}</option>`).join('')}
           <option value="__office" ${isOffice?'selected':''}>Everyone — office closure</option>
@@ -2042,11 +2199,11 @@ function renderLeaveModal(){
         <div><label>Last day</label><input type="date" id="lv-end" value="${s.end||''}" style="width:100%;box-sizing:border-box" onchange="lvRefreshHalves()"/></div>
       </div>
       ${isOffice?'':'<div id="lv-halves" style="margin-bottom:10px"></div>'}
-      <div style="margin-bottom:10px"><label>${isOffice?'Label':'Note (optional)'}</label><input id="lv-note" value="${escAttr(s.note||'')}" placeholder="${isOffice?`e.g. Christmas closure ${year}`:'e.g. family holiday'}" style="width:100%;box-sizing:border-box"/></div>
+      <div style="margin-bottom:10px"><label>${isOffice?'Label':'Note (optional)'}</label><input id="lv-note" value="${escAttr(s.note||'')}" placeholder="${isOffice?`e.g. Christmas closure ${year}`:'e.g. family holiday'}" style="width:100%;box-sizing:border-box"/>${isOffice?'':'<div class="lv-note-hint" style="font-size:10px;color:var(--grey);margin-top:3px">Only you and the directors can see this note. For sickness, no medical details are needed.</div>'}</div>
       <div id="lv-err" style="display:none;font-size:11px;color:var(--danger);margin-bottom:8px"></div>
       <div style="display:flex;gap:8px;justify-content:flex-end">
         <button class="btn btn-sm" onclick="closeLeaveModal()">Cancel</button>
-        <button class="btn btn-sm btn-primary" onclick="submitLeaveModal()">${isOffice?'Add closure':(s.person!==me&&isAdmin())?'Book leave':(cur()&&cur().selfApproveLeave&&isAdmin())?'Book leave':'Submit request'}</button>
+        <button class="btn btn-sm btn-primary" onclick="submitLeaveModal()">${isOffice?'Add closure':(s.person!==me&&isDirector())?'Book leave':(cur()&&cur().selfApproveLeave&&isDirector())?'Book leave':'Submit request'}</button>
       </div>
       <div style="font-size:10px;color:var(--grey);margin-top:8px">Weekends and bank holidays don't count. Only Annual leave uses the allowance — unpaid leave is unlimited but discretionary.</div>`;
   }
@@ -2072,7 +2229,7 @@ let lvCalDrag=null,lvCalCols=null;
 window.lvCalResizeStart=function(e,side,person,reqId){
   e.preventDefault();e.stopPropagation();
   const r=st.leaveRequests.find(x=>x.id===reqId);if(!r||r.closure)return;
-  if(!(isAdmin()||person===st.currentUser))return;
+  if(!(isDirector()||person===st.currentUser))return;
   lvCalCols=[...document.querySelectorAll('table.lv-cal thead th.lv-cal-day')].map(th=>{const b=th.getBoundingClientRect();return{iso:th.dataset.iso,left:b.left,right:b.right};});
   lvCalDrag={side,person,reqId,start:r.startDate,end:r.endDate,curISO:side==='l'?r.startDate:r.endDate};
   document.addEventListener('mousemove',lvCalMoveHandler);
@@ -2125,7 +2282,7 @@ function buildLeaveCalendar(){
   const nDays=new Date(y,mo+1,0).getDate();
   const monthLabel=base.toLocaleDateString('en-GB',{month:'long',year:'numeric'});
   const people=st.users.filter(u=>!u.deactivated).map(u=>u.name);
-  const isAd=isAdmin();
+  const isAd=isDirector();
   let h=`<div class="card"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
     <div class="card-title" style="margin:0">Team calendar — ${monthLabel}</div>
     <span style="display:flex;gap:8px"><button class="btn btn-sm" onclick="leaveCalNav(-1)">← prev</button><button class="btn btn-sm" onclick="leaveCalOff=0;render()">Today</button><button class="btn btn-sm" onclick="leaveCalNav(1)">next →</button></span>
@@ -2159,7 +2316,7 @@ function buildLeaveCalendar(){
       const half=r.halfDays&&r.halfDays[iso];
       const color=canSeeType?meta.color:'#26221E'; // masked type: black, so it can't be mistaken for Jury Service green
       const code=canSeeType?meta.code:'';
-      const title=canSeeType?`${r.type}${half?' (half day)':''}${r.status==='pending'?' — pending':''}`:`Leave${half?' (half day)':''}${r.status==='pending'?' — pending':''}`;
+      const title=canSeeType?`${r.type}${half?' (half day)':''}${r.status==='pending'?' — pending':''}`:`Away${half?' (half day)':''}${r.status==='pending'?' — pending':''}`;
       const txtColor=(canSeeType&&meta.dark)||!canSeeType?'#fff':'var(--blk)';
       if(r.status==='pending'){
         const bg=half?`background:linear-gradient(135deg,${color}55 50%,transparent 50%);`:'';
@@ -2183,7 +2340,7 @@ function buildLeaveCalendar(){
 function buildLeave(){
   const me=st.currentUser;
   const year=new Date().getFullYear();
-  const isAd=isAdmin();
+  const isAd=isDirector();
   let h=pageHead('Leave','leave',`<button class="btn-add" onclick="openLeaveModal()">+ Add leave</button>`);
   h+=leaveNoticeBanner();
   const allow=leaveAllowanceFor(me,year),carry=carryIn(me,year),booked=bookedDays(me,year),pend=pendingDays(me,year),rem=leaveRemaining(me,year);
@@ -2257,28 +2414,102 @@ function buildLeave(){
   // Admin: team summary + closures
   if(isAd){
     const others=st.users.filter(u=>!u.deactivated);
-    h+=`<div class="card"><div class="card-title">Team summary — ${year} (all leave types)</div>
-      <div class="tbl-freeze"><table class="rtable"><thead><tr><th>Person</th><th>Allowance</th><th>Carried</th><th>AL booked</th><th>AL left</th>${REQUESTABLE_LEAVE.filter(t=>t!=='Annual leave').map(t=>`<th title="${escAttr(t)}">${LEAVE_TYPE_META[t].code}</th>`).join('')}<th>Note</th><th></th></tr></thead><tbody>`;
-    for(const u of others){
-      const p=u.name;
-      const remP=leaveRemaining(p,year);
-      h+=`<tr${p===me?' style="background:var(--off)"':''}><td style="font-weight:600">${escAttr(p)}${p===me?' <span class="badge">You</span>':''}${u.selfApproveLeave?' <span class="badge" title="Can approve their own leave">self-approve</span>':''}</td>
-        <td>${leaveAllowanceFor(p,year)}</td>
-        <td>${carryIn(p,year)}</td>
-        <td>${bookedDays(p,year)}</td>
-        <td style="font-weight:700;color:${remP<0?'var(--danger)':'inherit'}">${remP}</td>
-        ${REQUESTABLE_LEAVE.filter(t=>t!=='Annual leave').map(t=>`<td>${typeBookedDays(p,year,t)||'·'}</td>`).join('')}
-        <td style="font-size:11px;color:var(--dkgrey);max-width:180px">${escAttr(st.leaveYearNotes[p+'||'+year]||'')}</td>
-        <td><button class="btn btn-sm" onclick="openLeaveMemberEdit('${jsq(p)}')">Edit</button></td></tr>`;
-    }
-    h+=`</tbody></table></div>
-      <div style="font-size:10px;color:var(--grey);margin-top:8px">Allowance defaults to 25 days pro-rata to weekly hours and start date; auto carry-over is capped at 5 days. Click Edit to adjust a person's figures, start date, self-approval or year note.</div>
-    </div>`;
+    h+=buildLeaveSummaryCard(me);
     h+=`</div>`;
     if(st.leaveClosures.length)h=h.slice(0,-8)+`<div style="font-size:11px;color:var(--dkgrey);margin-top:10px"><b>Office closures:</b> ${st.leaveClosures.map(c=>`${escAttr(c.label)} (${fmt(parseISO(c.startDate))} – ${fmt(parseISO(c.endDate))}) <button class="btn btn-sm" style="font-size:9px;padding:1px 6px" onclick="rmLeaveClosure('${c.id}')">remove</button>`).join(' · ')} <span style="color:var(--grey)">— add via + Add leave → Everyone</span></div></div>`;
   }
   return h;
 }
+
+// ── Leave summary (build 59, directors only) ───────────────────────────────────
+// One row per person for the chosen year: entitlement, carried over, annual leave
+// taken each month, total taken, pending, remaining (red when negative) and days
+// of every other leave type. From 2026 (LEAVE_BASE_YEAR) the figures come from
+// approved requests, exactly as the balances do. Earlier years were never in the
+// tracker, so they are read from the timesheet leave boxes (hours / daily hours)
+// and labelled as such; there is no entitlement or balance for them.
+let lvSumYear=null;
+const LV_MONTHS=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+window.setLvSumYear=function(y){if(!isDirector())return;lvSumYear=parseInt(y,10)||null;render();};
+function lvSumYears(){
+  const now=new Date().getFullYear();const ys=new Set([now,now+1,LEAVE_BASE_YEAR]);
+  for(const k of Object.keys(st.leave)){const [wk,type,,di]=k.split('||');if(type==='Bank Holiday')continue;const y=addDays(planWkToDate(wk),+di||0).getFullYear();if(y)ys.add(y);}
+  for(const r of st.leaveRequests){const y=parseInt(String(r.startDate).slice(0,4),10);if(y)ys.add(y);}
+  return[...ys].filter(y=>y>=2000&&y<=2100).sort((a,b)=>a-b);
+}
+function lvSummaryRows(year){
+  const fromTs=year<LEAVE_BASE_YEAR;
+  const mk=p=>({person:p,months:Array(12).fill(0),types:Object.fromEntries(REQUESTABLE_LEAVE.map(t=>[t,0]))});
+  const by={};
+  const add=(p,d,type,days)=>{if(!by[p])by[p]=mk(p);by[p].types[type]=(by[p].types[type]||0)+days;if(type==='Annual leave')by[p].months[d.getMonth()]+=days;};
+  if(fromTs){
+    for(const [k,v] of Object.entries(st.leave)){
+      const [wk,type,p,di]=k.split('||');if(type==='Bank Holiday')continue;
+      const h=parseFloat(v)||0;if(!h)continue;
+      const d=addDays(planWkToDate(wk),+di);if(d.getFullYear()!==year)continue;
+      add(p,d,type,h/dailyHours(p));
+    }
+  }else{
+    for(const r of st.leaveRequests){
+      if(r.status!=='approved')continue;
+      let d=parseISO(r.startDate);const end=parseISO(r.endDate);
+      while(d<=end){if(!isClosedDate(d)&&d.getFullYear()===year)add(r.person,d,r.type,(r.halfDays&&r.halfDays[isoDate(d)])?0.5:1);d=addDays(d,1);}
+    }
+  }
+  const people=st.users.filter(u=>!u.deactivated).map(u=>u.name);
+  for(const p of Object.keys(by))if(!people.includes(p)&&st.users.some(u=>u.name===p))people.push(p);
+  const rnd=x=>Math.round(x*100)/100;
+  return people.map(p=>{
+    const r=by[p]||mk(p);
+    r.months=r.months.map(rnd);for(const t in r.types)r.types[t]=rnd(r.types[t]);
+    r.types['Annual leave']=rnd(r.months.reduce((a,b)=>a+b,0)); // so the months always add up to the total shown
+    r.taken=r.types['Annual leave']||0;r.fromTs=fromTs;
+    if(!fromTs){r.allow=leaveAllowanceFor(p,year);r.carry=carryIn(p,year);r.pending=pendingDays(p,year);r.remaining=rnd(r.allow+r.carry-r.taken);}
+    return r;
+  });
+}
+function lvSumTypeCols(rows){
+  const base=REQUESTABLE_LEAVE.filter(t=>t!=='Annual leave');
+  const extra=[...new Set(rows.flatMap(r=>Object.keys(r.types)))].filter(t=>t!=='Annual leave'&&!base.includes(t)&&rows.some(r=>r.types[t]));
+  return[...base,...extra];
+}
+function buildLeaveSummaryCard(me){
+  if(!isDirector())return'';
+  const year=lvSumYear||new Date().getFullYear();
+  const rows=lvSummaryRows(year),fromTs=year<LEAVE_BASE_YEAR,cols=lvSumTypeCols(rows);
+  const n=x=>x?String(+(+x).toFixed(2)):'·';
+  const code=t=>(LEAVE_TYPE_META[t]&&LEAVE_TYPE_META[t].code)||t;
+  const sum=f=>rows.reduce((a,r)=>a+(f(r)||0),0);
+  let h=`<div class="card lv-summary"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px"><div class="card-title" style="margin:0">Leave summary — ${year}</div>
+    <div style="display:flex;gap:8px;align-items:center"><select id="lvsum-year" onchange="setLvSumYear(this.value)" style="font-size:11px;width:auto">${lvSumYears().map(y=>`<option value="${y}" ${y===year?'selected':''}>${y}</option>`).join('')}</select><button class="btn btn-sm" onclick="lvSummaryCsv()">Export CSV</button></div></div>`;
+  if(fromTs)h+=`<div class="lv-sum-ts" style="font-size:11px;color:var(--dkgrey);margin-bottom:8px">From timesheets: ${year} predates the leave tracker (it starts in ${LEAVE_BASE_YEAR}), so these days are read from the leave boxes on the timesheets (hours divided by the person's daily hours). There is no entitlement or balance for this year.</div>`;
+  h+=`<div class="tbl-freeze"><table class="rtable"><thead><tr><th>Person</th>${fromTs?'':'<th>Entitlement</th><th>Carried</th>'}${LV_MONTHS.map(m=>`<th style="text-align:right">${m}</th>`).join('')}<th style="text-align:right" title="Annual leave taken">AL taken</th>${fromTs?'':'<th style="text-align:right" title="Annual leave awaiting approval">Pending</th><th style="text-align:right">Remaining</th>'}${cols.map(t=>`<th style="text-align:right" title="${escAttr(t)}">${escAttr(code(t))}</th>`).join('')}${fromTs?'':'<th>Note</th><th></th>'}</tr></thead><tbody>`;
+  for(const r of rows){
+    const p=r.person,u=st.users.find(x=>x.name===p)||{};
+    h+=`<tr${p===me?' style="background:var(--off)"':''}><td style="font-weight:600;white-space:nowrap">${escAttr(p)}${p===me?' <span class="badge">You</span>':''}${u.selfApproveLeave?' <span class="badge" title="Can approve their own leave">self-approve</span>':''}${u.deactivated?' <span class="badge">left</span>':''}</td>`;
+    if(!fromTs)h+=`<td>${r.allow}</td><td>${r.carry}</td>`;
+    h+=r.months.map(m=>`<td style="text-align:right">${n(m)}</td>`).join('');
+    h+=`<td style="text-align:right;font-weight:600">${n(r.taken)}</td>`;
+    if(!fromTs)h+=`<td style="text-align:right">${n(r.pending)}</td><td class="lv-rem" style="text-align:right;font-weight:700;color:${r.remaining<0?'var(--danger)':'inherit'}">${+r.remaining.toFixed(2)}</td>`;
+    h+=cols.map(t=>`<td style="text-align:right">${n(r.types[t])}</td>`).join('');
+    if(!fromTs)h+=`<td style="font-size:11px;color:var(--dkgrey);min-width:240px;max-width:320px">${escAttr(st.leaveYearNotes[p+'||'+year]||'')}</td><td><button class="btn btn-sm" onclick="openLeaveMemberEdit('${jsq(p)}')">Edit</button></td>`;
+    h+=`</tr>`;
+  }
+  h+=`</tbody><tfoot><tr style="font-weight:700"><td>Total</td>${fromTs?'':`<td>${n(sum(r=>r.allow))}</td><td>${n(sum(r=>r.carry))}</td>`}${LV_MONTHS.map((m,i)=>`<td style="text-align:right">${n(sum(r=>r.months[i]))}</td>`).join('')}<td style="text-align:right">${n(sum(r=>r.taken))}</td>${fromTs?'':`<td style="text-align:right">${n(sum(r=>r.pending))}</td><td style="text-align:right">${+sum(r=>r.remaining).toFixed(2)}</td>`}${cols.map(t=>`<td style="text-align:right">${n(sum(r=>r.types[t]))}</td>`).join('')}${fromTs?'':'<td></td><td></td>'}</tr></tfoot></table></div>`;
+  h+=`<div style="font-size:10px;color:var(--grey);margin-top:8px">Days, counting half days as 0.5. Months and AL taken are annual leave; the coded columns are the other leave types (hover a code for its name).${fromTs?'':' Taken and remaining count approved leave only; pending is shown separately. Allowance defaults to 25 days pro-rata to weekly hours and start date; auto carry-over is capped at 5 days. Click Edit to adjust a person\'s figures, start date, self-approval or year note.'}</div></div>`;
+  return h;
+}
+window.lvSummaryCsv=function(){
+  if(!isDirector())return;
+  const year=lvSumYear||new Date().getFullYear();
+  const rows=lvSummaryRows(year),fromTs=year<LEAVE_BASE_YEAR,cols=lvSumTypeCols(rows);
+  const head=['Person',...(fromTs?[]:['Entitlement','Carried over']),...LV_MONTHS,'Annual leave taken',...(fromTs?[]:['Annual leave pending','Remaining']),...cols,...(fromTs?['Source']:['Note'])];
+  const out=[head.map(crmCsv).join(',')];
+  for(const r of rows){
+    out.push([r.person,...(fromTs?[]:[r.allow,r.carry]),...r.months,r.taken,...(fromTs?[]:[r.pending,r.remaining]),...cols.map(t=>r.types[t]||0),fromTs?'From timesheets':(st.leaveYearNotes[r.person+'||'+year]||'')].map(crmCsv).join(','));
+  }
+  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([out.join('\n')],{type:'text/csv'}));a.download=`amn-leave-summary-${year}.csv`;a.click();
+};
 
 // ── Non-billable helpers ───────────────────────────────────────────────────────
 const nbk=(wk,type,person,day)=>`${wk}||${type}||${person}||${day}`;
@@ -2625,10 +2856,10 @@ function editLeaveDates(person,oldStart,newStart,newEnd){
     }
   }
   const own=person===st.currentUser;
-  if(!own&&isAdmin()){
+  if(!own&&isDirector()){
     r.status='approved';r.decidedBy=st.currentUser;r.decidedAt=new Date().toISOString();
     pushLeaveNotice(person,r.id,`${st.currentUser} amended your ${r.type} to ${fmt(parseISO(newStart))}${newStart!==newEnd?' – '+fmt(parseISO(newEnd)):''} — please check it's correct.`);
-  } else if(own&&isAdmin()&&cur()&&cur().selfApproveLeave){
+  } else if(own&&isDirector()&&cur()&&cur().selfApproveLeave){
     r.status='approved';r.decidedBy=st.currentUser;r.decidedAt=new Date().toISOString();
   } else {
     r.status='pending';delete r.decidedBy;delete r.decidedAt;
@@ -3231,7 +3462,7 @@ function tsWkState(person,wk){
   if(isSub(person,wk))return'submitted';
   const s=tsStartWk(person);
   if(!s||wk<s)return'none';
-  return isOverdue(wk)?'overdue':'pending';
+  return isOverdue(wk)&&!pendingLeaveOverlapsWeek(person,wk)?'overdue':'pending'; // build 58: awaiting a leave decision is not overdue
 }
 // Hours on a week against the weekly hours Submit insists on (the desktop bar's sums).
 function tsWkHours(person,wk){
@@ -3245,8 +3476,8 @@ function tsFillBankHols(wk,person,days){
     if(gL(wk,'Bank Holiday',person,bh.dayIdx)===0)sL(wk,'Bank Holiday',person,bh.dayIdx,7.5);
   }
 }
-function subStatus(person){const un=tsWeeksDue(person);return{unsubmitted:un,overdue:un.filter(w=>isOverdue(w))};}
-function tsDueRows(person){return tsWeeksDue(person).map(wk=>{const h=tsWkHours(person,wk);return{wk,mon:wkKeyToDate(wk),entered:h.entered,target:h.target,overdue:isOverdue(wk)};});}
+function subStatus(person){const un=tsWeeksDue(person);return{unsubmitted:un,overdue:un.filter(w=>isOverdue(w)&&!pendingLeaveOverlapsWeek(person,w))};}
+function tsDueRows(person){return tsWeeksDue(person).map(wk=>{const h=tsWkHours(person,wk);const aw=pendingLeaveOverlapsWeek(person,wk);return{wk,mon:wkKeyToDate(wk),entered:h.entered,target:h.target,overdue:isOverdue(wk)&&!aw,awaiting:aw};});}
 function tsDueHrs(r){return r.entered>0?`${+r.entered.toFixed(2)} of ${r.target}h`:'nothing entered';}
 // ── Project membership — members may only log time to projects they've been
 // added to; PMs and admins effectively belong to every project.
@@ -3254,7 +3485,7 @@ function projectMembersOf(pn){return(st.projectMembers&&st.projectMembers[pn])||
 function canLogToProject(person,pn){
   const u=st.users.find(x=>x.name===person);
   if(!u)return false;
-  if(u.role==='admin'||u.role==='pm')return true;
+  if(u.role==='admin'||u.role==='director'||u.role==='pm')return true;
   return projectMembersOf(pn).includes(person);
 }
 window.projMemberAdd=function(pn,name){
@@ -3300,7 +3531,18 @@ function chartData(proj,stageName){
 }
 
 const cur=()=>st.users.find(u=>u.name===st.currentUser);
-const isAdmin=()=>cur()?.role==='admin';
+// Build 57: four levels. member < pm < admin < director. A director holds every admin
+// right (isAdmin() is true for both) and, in addition, the HR matters: leave and
+// sickness decisions, the Team page's management controls, and staff rates.
+const isDirector=()=>cur()?.role==='director';
+const tsMayEdit=person=>!!cur()&&(person===cur().name||isDirector());
+const isAdmin=()=>{const r=cur()?.role;return r==='admin'||r==='director';};
+const roleIsAdmin=r=>r==='admin'||r==='director';
+// The role as the VIEWER should see it: a director is shown to everyone else as an
+// admin (every director right is an admin right, so nothing is untrue), and only
+// directors see the word Director.
+const roleLabelFor=role=>role==='director'?(isDirector()?'Director':'Admin'):role==='admin'?'Admin':role==='pm'?'Project Manager':'Member';
+const DIRECTOR_SEED=['Joe Leach','Anne-Marie Nicholson'];
 const isPM=()=>cur()?.role==='pm';
 const isMember=()=>cur()?.role==='member';
 // PMs share most of an admin's day-to-day access (projects, clients, forecast,
@@ -3718,7 +3960,7 @@ function render(){
   document.getElementById('app').innerHTML=buildApp();
   if(_psX){const _psNow=document.querySelector('.plan-scroll');if(_psNow)_psNow.scrollLeft=_psX;}
   planStickyHead();
-  renderPlanColorPicker();renderTeamAddModal();if(st._tab==='projects'&&healthProj)setTimeout(drawChart,60);if(st._tab==='reports'&&customReportResult&&customReportResult.length)setTimeout(drawCustomReportChart,60);if(st._tab==='cpd')setTimeout(drawCpdPie,60);if(st._tab==='income'){setTimeout(drawIncChart,60);incHBarSync();setTimeout(incHBarSync,80);}renderNotePopover();renderPlanPopover();renderMsPopover();renderPlanChoice();renderPlaceholderPopover();renderPlanBreakdown();renderConfirmModal();renderOfficeWidePopover();renderRateModal();renderCpdModal();renderCrmModal();renderLeaveModal();renderAddClientModal();renderIncPopover();renderIncLikPicker();renderInvLikPicker();renderTsDue();renderFpPop();renderUnsavedModal();fkRestore(_fk);}
+  renderPlanColorPicker();renderTeamAddModal();renderTsChg();if(st._tab==='projects'&&healthProj)setTimeout(drawChart,60);if(st._tab==='reports'&&customReportResult&&customReportResult.length)setTimeout(drawCustomReportChart,60);if(st._tab==='cpd')setTimeout(drawCpdPie,60);if(st._tab==='income'){setTimeout(drawIncChart,60);incHBarSync();setTimeout(incHBarSync,80);}renderNotePopover();renderPlanPopover();renderMsPopover();renderPlanChoice();renderPlaceholderPopover();renderPlanBreakdown();renderConfirmModal();renderOfficeWidePopover();renderRateModal();renderCpdModal();renderCrmModal();renderLeaveModal();renderAddClientModal();renderIncPopover();renderIncLikPicker();renderInvLikPicker();renderTsDue();renderFpPop();renderUnsavedModal();fkRestore(_fk);}
 
 // ── App shell ─────────────────────────────────────────────────────────────────
 function buildApp(){
@@ -3743,12 +3985,12 @@ function buildApp(){
   return`${_syncWarn}${_staleWarn}<div class="ubar">
     <div style="display:flex;align-items:center;gap:10px">
       <span style="font-size:12px;color:var(--dkgrey)">${u.name}</span>
-      ${u.role==='admin'?`<span class="badge badge-info">admin</span>`:u.role==='pm'?`<span class="badge badge-info">project manager</span>`:''}
+      ${u.role==='director'?`<span class="badge badge-info">director</span>`:u.role==='admin'?`<span class="badge badge-info">admin</span>`:u.role==='pm'?`<span class="badge badge-info">project manager</span>`:''}
       ${overdue.length?`<span class="badge badge-overdue" style="cursor:pointer" onclick="openTsDue('${jsq(u.name)}')" title="See the weeks you still need to submit">⚠ ${overdue.length} overdue</span>`:''}
       ${(st.cpdNotices||[]).filter(n=>n.person===u.name&&n.status==='pending').length?`<span class="badge badge-info" style="cursor:pointer" onclick="tab('log')" title="CPD time is waiting to be accepted into a submitted timesheet">${(st.cpdNotices||[]).filter(n=>n.person===u.name&&n.status==='pending').length} CPD to accept</span>`:''}
       ${cpdWriteupsDue(u.name).length?`<span class="badge badge-warn" style="cursor:pointer" onclick="tab('cpd')" title="CPD entries you created are missing their shared write-up — what we learned, how we're applying it, next steps">✎ ${cpdWriteupsDue(u.name).length} CPD write-up${cpdWriteupsDue(u.name).length===1?'':'s'}</span>`:''}
       ${(isAdmin()||isPM())&&crmMyOpenActions(u.name).length?`<span class="badge badge-warn" style="cursor:pointer" onclick="tab('crm')" title="Open CRM actions assigned to you">${crmMyOpenActions(u.name).length} CRM action${crmMyOpenActions(u.name).length===1?'':'s'}</span>`:''}
-      ${isAdmin()&&adminPendingLeave().length?`<span class="badge badge-warn" style="cursor:pointer" onclick="tab('leave')" title="Leave requests awaiting approval">${adminPendingLeave().length} leave request${adminPendingLeave().length===1?'':'s'}</span>`:''}
+      ${isDirector()&&adminPendingLeave().length?`<span class="badge badge-warn" style="cursor:pointer" onclick="tab('leave')" title="Leave requests awaiting approval">${adminPendingLeave().length} leave request${adminPendingLeave().length===1?'':'s'}</span>`:''}
       ${myLeaveNotices().length?`<span class="badge badge-info" style="cursor:pointer" onclick="tab('leave')" title="Leave was recorded on your behalf — check it's correct">${myLeaveNotices().length} leave notice${myLeaveNotices().length===1?'':'s'}</span>`:''}
     </div>
     <div style="display:flex;align-items:center;gap:16px">
@@ -3846,7 +4088,7 @@ function buildLog(){
   const sub=isSub(targetName,wk);const submittable=canSubmit(wk);const wkState=tsWkState(targetName,wk);const od=wkState==='overdue';
   const subKey=`${targetName}||${wk}`;
   const inEditMode=editingSubmitted.has(subKey);
-  const editPermitted=isAdmin()||(targetName===cur().name);
+  const editPermitted=tsMayEdit(targetName);
   const canEdit=editPermitted&&(!sub||inEditMode)&&!isFuture;
 
   const showWeekend=weekHasAnyOT(wk,targetName);
@@ -3889,6 +4131,7 @@ function buildLog(){
   if(viewMode){h+=`<button class="back-btn" onclick="closeViewUser()">← Back to Team</button>`;}
   h+=pageHead(viewMode?escAttr(targetName)+"&rsquo;s Timesheet":'Timesheets','log');
   h+=cpdBanner;
+  h+=tsChgBannerHTML(viewMode?targetName:null);
 
   // These need to be declared before wknav (allDays7 used in wklabel)
   const anyOT=weekHasAnyOT(wk,targetName);
@@ -3902,6 +4145,8 @@ function buildLog(){
     ${!isCur?`<button class="btn btn-sm" onclick="goThisWeek()" title="Jump back to the current week">↩ This week</button>`:''}
     ${isCur?`<span class="badge">This week</span>`:''}
     ${isFuture?`<span class="badge badge-info">Future week — view only</span>`:sub&&!inEditMode?`<span class="badge badge-submitted">✓ Submitted</span>`:inEditMode?`<span class="badge badge-pending">Editing</span>`:od?`<span class="badge badge-overdue">Overdue</span>`:wkState==='none'?`<span class="badge" title="This week is before the point this person's timesheets are counted from, so it does not need submitting">Not required</span>`:submittable?`<span class="badge badge-pending">Awaiting submission</span>`:''}
+    ${isDirector()?`<span class="ts-dir-pick" style="display:inline-flex;gap:6px;align-items:center"><select id="ts-pick-person" onchange="tsPickPerson(this.value)" title="View anyone\u2019s timesheet" style="font-size:12px">${st.users.filter(x=>!x.deactivated||x.name===targetName).map(x=>`<option value="${escAttr(x.name)}" ${x.name===targetName?'selected':''}>${escAttr(x.name)}${x.name===cur().name?' (you)':''}</option>`).join('')}</select><input type="date" id="ts-pick-date" value="${isoDate(days[0])}" onchange="tsPickDate(this.value)" title="Pick any date to open that week" style="font-size:12px"/></span>`:''}
+    ${viewMode&&canRequestTsChange(targetName)&&!isFuture?`<button class="btn btn-sm btn-primary" onclick="openTsChg()" title="Ask ${escAttr(targetName)} to accept changes to this week">Request a change</button>`:''}
     <span style="margin-left:auto;display:flex;gap:8px"><button class="btn btn-sm" onclick="tsExpandAll()">Expand all</button><button class="btn btn-sm" onclick="tsCollapseAll()">Collapse all</button></span>
   </div>`;
 
@@ -3961,7 +4206,9 @@ function buildLog(){
     for(const type of leaveActive){
       const isBH=type==='Bank Holiday';
       let rowTotal=0;
-      h+=`<tr class="leave-row"><td class="proj-cell" style="padding-left:12px;font-weight:600">${type}${isBH?' <span style="font-size:9px;color:var(--ok);font-weight:600">(auto)</span>':''}</td><td></td>`;
+      const typeLbl=(isBH||isDirector()||targetName===st.currentUser)?type:'Away'; // build 58: leave types are HR data
+      const _dh=dailyHours(targetName);
+      h+=`<tr class="leave-row"><td class="proj-cell" style="padding-left:12px;font-weight:600">${escAttr(typeLbl)}${isBH?' <span style="font-size:9px;color:var(--ok);font-weight:600">(auto)</span>':''}</td><td></td>`;
       for(let i=0;i<7;i++){
         const isWknd=i>=5;
         const v=i<5?gL(wk,type,targetName,i):0;
@@ -3969,7 +4216,7 @@ function buildLog(){
         const isBHDay=isBH&&bhDays.has(i);
         const hasNote=i<5&&getCellNote(wk,'Leave',type,targetName,i).trim().length>0;
         h+=`<td class="weekend${isWknd?' disabled':''}${(i<5&&bhDays.has(i))?' bh-cell':''}" style="text-align:center;padding:3px">`;
-        if(i<5){h+=`<div class="cell-wrap"><input type="number" class="tinput" min="0" max="7.5" step="0.5" value="${v||''}" ${!canEdit?'disabled':''} data-wk="${wk}" data-lt="${escAttr(type)}" data-pe="${escAttr(targetName)}" data-d="${i}" onchange="logLeave(this)"/><button tabindex="-1" class="cn-btn ${hasNote?'has-note':''}" title="${hasNote?'Edit note':'Add note'}" onclick="openCellNote(this,'${jsq(wk)}','Leave','${jsq(type)}','${jsq(targetName)}',${i})"></button></div>`;}
+        if(i<5){h+=lvCellHTML({wk,type,person:targetName,d:i,v,dh:_dh,isBH,bhDay:bhDays.has(i),canEdit});}
         else{h+=`<span style="color:var(--mid)">—</span>`;}
         h+=`</td>`;
       }
@@ -3994,7 +4241,7 @@ function buildLog(){
         rowTot+=v;
         cells.push(`<td class="${i>=5?'weekend disabled':''}" style="text-align:center;padding:3px">${v?`<span class="ts-pend">${v}</span>`:i>=5?'<span style="color:var(--mid)">—</span>':''}</td>`);
       }
-      h+=`<tr class="leave-row"><td class="proj-cell" style="padding-left:12px;font-weight:600">${escAttr(r.type)} <span class="badge badge-pending" style="font-size:9px">pending approval</span></td><td></td>${cells.join('')}<td class="total-col" style="color:var(--leave)">${rowTot||''}</td><td class="ot-col"></td><td class="del-col"></td></tr>`;
+      h+=`<tr class="leave-row"><td class="proj-cell" style="padding-left:12px;font-weight:600">${escAttr(isDirector()||targetName===st.currentUser?r.type:'Away')} <span class="badge badge-pending" style="font-size:9px">pending approval</span></td><td></td>${cells.join('')}<td class="total-col" style="color:var(--leave)">${rowTot||''}</td><td class="ot-col"></td><td class="del-col"></td></tr>`;
     }
   }
   // Add-leave-type row (always shown, consistent with Add project pattern)
@@ -4827,7 +5074,7 @@ function buildAssignmentRow(kind,identity,person,cols,rowLabel,indent,removable,
       while(end+1<cols.length&&findCovering(cols[end+1])===a)end++;
       const dayMode=planView==='day';
       const _clo=kind==='leave'&&a.closure;
-      const label=kind==='proj'?`${a.hrsPerDay}h/d${Array.isArray(a.days)&&a.days.length&&a.days.length<5?` · ${a.days.length}d/wk`:''}`:_clo?'Office closure':(kind==='leave'&&!isAdmin()&&person!==st.currentUser?(a.pending?'Leave (pending)':'Leave'):(kind==='leave'&&a.pending?a.type+' (pending)':a.type));
+      const label=kind==='proj'?`${a.hrsPerDay}h/d${Array.isArray(a.days)&&a.days.length&&a.days.length<5?` · ${a.days.length}d/wk`:''}`:_clo?'Office closure':(kind==='leave'&&!isDirector()&&person!==st.currentUser?(a.pending?'Away (pending)':'Away'):(kind==='leave'&&a.pending?a.type+' (pending)':a.type));
       const hasNote=!!getAssignmentNote({kind,project:identity.project,stage:identity.stage,person,type:a.type,startDate:a.startDate});
       const barData=`data-kind="${kind}" data-id="${a.id||''}" data-person="${escAttr(person)}" data-project="${kind==='proj'?escAttr(identity.project):''}" data-stage="${kind==='proj'?escAttr(identity.stage):''}" data-type="${kind!=='proj'?escAttr(a.type):''}" data-start="${a.startDate}" data-end="${a.endDate}" data-hrs="${a.hrsPerDay}"`;
       // Walk the extent: weekday columns render as bar segments; weekend columns as
@@ -5325,7 +5572,7 @@ window.savePlanPopover=function(){
       for(let i=0;i<Math.max(1,weeks);i++){
         const s=isoDate(addDays(parseISO(sd),i*7)),e=isoDate(addDays(parseISO(ed),i*7));
         commitDescCreate(ps.kind,{project,stage,person:who,type,days},s,e,hrsPerDay,notes);
-        if(notes)setAssignmentNote({kind:ps.kind,project,stage,person:who,type,startDate:s},notes);
+        if(notes&&!(ps.kind==='leave'&&type!=='Bank Holiday'))setAssignmentNote({kind:ps.kind,project,stage,person:who,type,startDate:s},notes);
       }
     }
   } else {
@@ -5430,13 +5677,13 @@ function buildHealthDetail(projName){
     ${g.undated>0.005?`<div class="metric"><div class="metric-label">Undated</div><div class="metric-value" style="color:#8a5a00">${gbpInv(g.undated)}</div><div class="metric-sub">counts towards the fee · in no cashflow month</div></div>`:''}
   </div>`;})()}
   ${proj.feeNotes&&admin?`<div class="card" style="margin-bottom:14px"><div class="card-title">Fee Notes <span style="font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--grey);font-weight:600">admins only</span></div><div style="font-size:12px;line-height:1.7;white-space:pre-wrap;color:var(--blk)">${escAttr(proj.feeNotes)}</div></div>`:''}
-  <div style="font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--dkgrey);margin-bottom:8px;margin-top:6px;font-weight:600">Cost</div>
+${isDirector()?`  <div style="font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--dkgrey);margin-bottom:8px;margin-top:6px;font-weight:600">Cost</div>
   <div class="mgrid">
     <div class="metric"><div class="metric-label">Cost to date</div><div class="metric-value">${gbp(spentCost)}</div><div class="metric-sub">at cost rates</div></div>
     <div class="metric"><div class="metric-label">Forecast cost</div><div class="metric-value">${gbp(fcastCost)}</div><div class="metric-sub">inc. forecast hrs</div></div>
     <div class="metric"><div class="metric-label">Margin to date</div><div class="metric-value" style="color:${margin>=0?'var(--ok)':'var(--danger)'}">${gbp(margin)}</div><div class="metric-sub">billable − cost</div></div>
     <div class="metric"><div class="metric-label">Forecast margin</div><div class="metric-value" style="color:${marginF>=0?'var(--ok)':'var(--danger)'}">${gbp(marginF)}</div><div class="metric-sub">inc. forecast</div></div>
-  </div>
+  </div>`:''}
   <div class="card">
     <div class="card-title">Fee Spend Over Time <span style="font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--dkgrey);font-family:'Figtree',sans-serif;font-weight:600;margin-left:8px">(Billable)</span></div>
     <div style="font-size:11px;color:var(--dkgrey);margin-bottom:10px">Calculated using each person's billable rate × hours logged.</div>
@@ -6690,10 +6937,10 @@ function fpInner(p){
           <span class="fp-handle" style="left:0" onpointerdown="fpDown(event,'stage','${jsq(s.id)}','','left')"></span><span class="fp-handle" style="right:0" onpointerdown="fpDown(event,'stage','${jsq(s.id)}','','right')"></span></button>`:''}
       </div>
       <div class="fp-right">
-        <b class="c-fee" title="${escAttr(s.name)}: ${fpGbp(x.fee)} fee, ${fpGbp(x.cost)} staff cost${logged||loggedH?`. Already logged on this stage: ${fpHrs(loggedH)}, ${fpGbp(logged)} (not included in the plan)`:''}">${fpGbp(x.fee)}</b>
+        <b class="c-fee" title="${escAttr(s.name)}: ${fpGbp(x.fee)} fee${isDirector()?`, ${fpGbp(x.cost)} staff cost`:''}${logged||loggedH?`. Already logged on this stage: ${fpHrs(loggedH)}, ${fpGbp(logged)} (not included in the plan)`:''}">${fpGbp(x.fee)}</b>
         <span class="c-hrs">${fpHrs(x.hrs)}</span>
         <span class="c-share" title="On average ${fte} people full time over the stage's ${nWk} weeks (FTE: full-time equivalent).">${x.hrs?`${fte} FTE`:''}</span>
-        <span class="c-mgn" title="Margin: the fee less staff cost, as a share of the fee.">${x.fee?Math.round((x.fee-x.cost)/x.fee*100)+'%':''}</span>
+        <span class="c-mgn" title="${isDirector()?'Margin: the fee less staff cost, as a share of the fee.':''}">${isDirector()&&x.fee?Math.round((x.fee-x.cost)/x.fee*100)+'%':''}</span>
         <span class="c-tgt"><input class="fp-tin" value="${hasT?s.target:''}" placeholder="£ target" title="Target fee for this stage" onchange="fpSetTarget('${jsq(s.id)}',this.value)"/>${gap}</span>
       </div>
     </div>`;
@@ -6751,7 +6998,7 @@ function fpInner(p){
   const summary=`<div class="fp-cards">
     ${card('Project fee',fpGbp(c.fee),loggedAll>0.5?`the sum of the stage fees · ${fpGbp(loggedAll)} already logged, not included`:'the sum of the stage fees')}
     ${card('Resource',fpHrs(c.hrs),`about ${Math.round(c.hrs/7.5)} days across ${c.people} ${c.people===1?'person':'people'}`)}
-    ${card('Margin',c.fee?fpPct(margin*100):'—',c.fee?`${fpGbp(c.fee-c.cost)} over staff cost`:'no people yet',c.fee&&margin<0.15?'var(--danger)':'')}
+    ${!isDirector()?'':card('Margin',c.fee?fpPct(margin*100):'—',c.fee?`${fpGbp(c.fee-c.cost)} over staff cost`:'no people yet',c.fee&&margin<0.15?'var(--danger)':'')}
     ${card('Against target',gapTxt,gapSub,gapCol)}
     ${card('Programme',c.start!=null?`${fpDm(c.start)} to ${fpDm(c.end)} ${fpDate(c.end).getFullYear()}`:'no stages',c.start!=null?`${Math.round((c.end-c.start+1)/5)} weeks, ${d.stages.length} stage${d.stages.length===1?'':'s'}`:'')}
   </div>`;
@@ -6766,7 +7013,7 @@ function fpInner(p){
       ${[...new Set(drafts.flatMap(x=>x.stages.map(s=>s.name)))].map(nm=>row(escAttr(nm),cc.map(x=>{const q=x.c.stages.find(y=>y.s.name===nm);return q?fpGbp(q.fee):'—';}))).join('')}
       ${row('Project fee',cc.map(x=>fpGbp(x.c.fee)),true)}
       ${row('Hours',cc.map(x=>fpHrs(x.c.hrs)))}
-      ${row('Margin',cc.map(x=>x.c.fee?`${fpPct((x.c.fee-x.c.cost)/x.c.fee*100)} (${fpGbp(x.c.fee-x.c.cost)})`:'—'))}
+      ${isDirector()?row('Margin',cc.map(x=>x.c.fee?`${fpPct((x.c.fee-x.c.cost)/x.c.fee*100)} (${fpGbp(x.c.fee-x.c.cost)})`:'—')):''}
       ${row('Programme',cc.map(x=>x.c.start!=null?`${Math.round((x.c.end-x.c.start+1)/5)} weeks`:'—'))}
       ${row('People',cc.map(x=>String(x.c.people)))}
       ${row('Last changed',cc.map(x=>x.d.updatedAt?`${escAttr(x.d.updatedBy||'')} ${relTime(x.d.updatedAt)}`:''))}
@@ -6841,7 +7088,7 @@ function fpInner(p){
     <div class="fp-scroll"><div style="${tableW}">
       <div class="fp-row fp-rmon" style="${cols}"><div class="fp-left fp-hl"></div><div class="fp-tl fp-hmon">${months}</div><div class="fp-right fp-hl"></div></div>
       <div class="fp-row fp-rwk" style="${cols}"><div class="fp-left fp-hl fp-hsub">${day?'Week commencing, and day':'Week commencing'}</div><div class="fp-tl fp-hwk">${weeks}${bhHead}</div>
-        <div class="fp-right fp-hl fp-hsub"><span class="c-fee c-head">Fee</span><span class="c-hrs c-head">Hours</span><span class="c-share c-head" title="Share of each person's working week while they are on the stage; for a stage, the average number of people full time">Time</span><span class="c-mgn c-head" title="Margin: the fee less staff cost, as a share of the fee">Margin</span><span class="c-tgt c-head">Target fee</span></div></div>
+        <div class="fp-right fp-hl fp-hsub"><span class="c-fee c-head">Fee</span><span class="c-hrs c-head">Hours</span><span class="c-share c-head" title="Share of each person's working week while they are on the stage; for a stage, the average number of people full time">Time</span><span class="c-mgn c-head" title="${isDirector()?'Margin: the fee less staff cost, as a share of the fee':''}">${isDirector()?'Margin':''}</span><span class="c-tgt c-head">Target fee</span></div></div>
       <div class="fp-row fp-rchart" style="${cols}"><div class="fp-left fp-hl fp-bold">Fee by week</div><div class="fp-tl fp-hchart" style="${grid}">${wbars}</div><div class="fp-right fp-hl fp-small">busiest week <b>${peak?`${fpGbp(peak)}, w/c ${fpDm(base+peakW*5)}`:'—'}</b></div></div>
       <div class="fp-row" style="${cols}"><div class="fp-left fp-hl fp-bold" style="justify-content:space-between">Milestones <button class="fp-chip" onclick="fpAddMilestone()">+ Milestone</button></div><div class="fp-tl fp-hms" style="${grid}">${ms}</div><div class="fp-right fp-hl"></div></div>
       ${rows}
@@ -6851,7 +7098,7 @@ function fpInner(p){
         <div class="fp-tlx fp-foot-lbl"><span>Project total</span></div>
         <div class="fp-right">
           <b class="c-fee">${fpGbp(c.fee)}</b><span class="c-hrs">${fpHrs(c.hrs)}</span><span class="c-share"></span>
-          <span class="c-mgn">${c.fee?fpPct(margin*100):''}</span>
+          <span class="c-mgn">${isDirector()&&c.fee?fpPct(margin*100):''}</span>
           <span class="c-tgt">${c.nTgt?`<span class="fp-tsum" title="The sum of the stage targets">${fpGbp(c.tgt)}</span>`:''}</span>
         </div>
       </div>
@@ -7390,9 +7637,13 @@ function homeNotifications(u){
   if(wrN)items.push({badge:'badge-warn',label:'✎',text:`${wrN} CPD write-up${wrN===1?'':'s'} outstanding — the shared boxes need completing after the event`,go:"tab('cpd')"});
   const lvN=myLeaveNotices().length;
   if(lvN)items.push({badge:'badge-info',label:'L',text:`${lvN} leave notice${lvN===1?'':'s'} — leave was recorded or amended on your behalf`,go:"tab('leave')"});
+  const tcN=tsChgFor(u.name).length;
+  if(tcN)items.push({badge:'badge-info',label:'T',text:`${tcN} timesheet change request${tcN===1?'':'s'} waiting for you to accept or decline`,go:"tab('log')"});
+  const tcF=tsChgFeedback(u.name).length;
+  if(tcF)items.push({badge:'badge-info',label:'T',text:`${tcF} answer${tcF===1?'':'s'} to your timesheet change request${tcF===1?'':'s'}`,go:"tab('log')"});
   const odActs=(isAdmin()||isPM())?crmMyOpenActions(u.name).filter(crmActionOverdue).length:0;
   if(odActs)items.push({badge:'badge-warn',label:'!',text:`${odActs} overdue CRM action${odActs===1?'':'s'} assigned to you`,go:"tab('crm')"});
-  if(isAdmin()&&adminPendingLeave().length){const n=adminPendingLeave().length;items.push({badge:'badge-warn',label:'✓',text:`${n} leave request${n===1?'':'s'} awaiting approval`,go:"tab('leave')"});}
+  if(isDirector()&&adminPendingLeave().length){const n=adminPendingLeave().length;items.push({badge:'badge-warn',label:'✓',text:`${n} leave request${n===1?'':'s'} awaiting approval`,go:"tab('leave')"});}
   return items;
 }
 function homeAwayRows(days){
@@ -7411,8 +7662,8 @@ function homeAwayCardBody(){
     let h=`<div style="font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--grey);font-weight:700;margin:2px 0 6px">${title}</div>`;
     if(!rows.length)return h+`<div style="font-size:12px;color:var(--dkgrey);margin-bottom:10px">Everyone's in.</div>`;
     h+=rows.map(({r,from,to})=>{
-      const canSee=isAdmin()||r.person===st.currentUser;
-      const label=canSee?r.type:'Leave';
+      const canSee=isDirector()||r.person===st.currentUser;
+      const label=canSee?r.type:'Away';
       const range=from===to?fmt(parseISO(from)):`${fmt(parseISO(from))} – ${fmt(parseISO(to))}`;
       return`<div style="display:flex;justify-content:space-between;gap:10px;font-size:12px;padding:3px 0"><span style="font-weight:600">${escAttr(r.person)}</span><span style="color:var(--dkgrey)">${escAttr(label)} · ${range}${r.status==='pending'?' <span class="badge badge-pending" style="font-size:9px">pending</span>':''}${r.closure?' <span class="badge" style="font-size:9px">closure</span>':''}</span></div>`;
     }).join('');
@@ -7567,11 +7818,11 @@ function buildHome(){
     const pend=adminPendingLeave();
     h+=`<div class="card-row">
       <div class="card" style="flex:2.6;min-width:340px"><div class="card-title">Team — timesheets &amp; utilisation this week</div><table class="rtable"><thead><tr><th>Name</th><th>Timesheets</th><th>Utilisation</th><th class="num">Hours</th><th></th></tr></thead><tbody>${rows}</tbody></table><div style="margin-top:8px"><button class="btn btn-sm" onclick="tab('team')">Open Team page</button></div></div>
-      <div class="card" style="flex:1;min-width:200px;display:flex;flex-direction:column"><div class="card-title">Approvals pending</div>
+      ${isDirector()?`<div class="card" style="flex:1;min-width:200px;display:flex;flex-direction:column"><div class="card-title">Approvals pending</div>
         <div style="display:flex;align-items:baseline;gap:10px"><span style="font-size:34px;font-weight:700;color:${pend.length?'var(--accent)':'var(--blk)'};line-height:1">${pend.length}</span><span style="font-size:12px;color:var(--dkgrey)">${pend.length===1?'leave request awaiting a decision':'leave requests awaiting a decision'}</span></div>
         ${pend.length?'':'<div style="font-size:12px;color:var(--dkgrey);margin-top:6px">Nothing waiting on you.</div>'}
         <div style="margin-top:auto;padding-top:10px"><button class="btn btn-sm ${pend.length?'btn-primary':''}" onclick="tab('leave')">Open Leave</button></div>
-      </div>
+      </div>`:''}
     </div>`;
   }
   return h;
@@ -7587,7 +7838,7 @@ function buildTeam(){
   if(teamViewPerson&&!st.users.some(x=>x.name===teamViewPerson))teamViewPerson=null;
   if(teamViewPerson)return buildTeamDetail(teamViewPerson);
   const days=getWkDates(teamWkOff,7);
-  let h=pageHead('Team','team',isAdmin()?`<button class="btn-add" onclick="openTeamAdd()">+ Add team member</button>`:'');
+  let h=pageHead('Team','team',isDirector()?`<button class="btn-add" onclick="openTeamAdd()">+ Add team member</button>`:'');
   const people=st.users.filter(x=>!x.deactivated);
   // Summary strip
   let totLogged=0,totCap=0,totBill=0,totOther=0,totSched=0;
@@ -7617,7 +7868,6 @@ function buildTeam(){
     </div>
   </div>`;
   // Members table
-  const roleLabel={admin:'Admin',pm:'Project Manager',member:'Member'};
   h+=`<div class="card"><div class="card-title">Team members</div><div style="font-size:11px;color:var(--dkgrey);margin:-4px 0 10px">Click a person for their full profile — rates, leave, CPD and assignments. Figures below are for the selected week.</div><div class="tbl-freeze"><table class="rtable"><thead><tr><th>Name</th><th>Email</th><th>Role</th><th class="num">Scheduled</th><th class="num">Hours</th><th class="num">Delta</th><th style="min-width:150px">Utilisation</th><th class="num">Capacity</th><th class="num">Billable hrs</th></tr></thead><tbody>`;
   for(const p of people){
     const{w,c,sc}=per[p.name];
@@ -7626,7 +7876,7 @@ function buildTeam(){
     h+=`<tr class="proj-click" onclick="teamOpenPerson('${jsq(p.name)}')">
       <td style="font-weight:700">${escAttr(p.name)}${isSelf?' <span class="badge">You</span>':''}${(p.weeklyHours||37.5)<37.5?' <span class="badge badge-info" style="font-size:9px">Part-time</span>':''}</td>
       <td style="font-size:11px;color:var(--dkgrey)">${escAttr(p.email||'—')}</td>
-      <td><span style="font-size:11px;color:var(--dkgrey);font-weight:600">${roleLabel[p.role]||'Member'}</span></td>
+      <td><span style="font-size:11px;color:var(--dkgrey);font-weight:600">${roleLabelFor(p.role)}</span></td>
       <td class="num">${sc?sc.toFixed(1):'—'}</td>
       <td class="num" style="font-weight:700">${w.total?w.total.toFixed(1):'—'}</td>
       <td class="num">${sc||w.total?(delta>=0?`<span class="delta-pos">+${delta.toFixed(1)}</span>`:`<span class="delta-neg">−${Math.abs(delta).toFixed(1)}</span>`):'—'}</td>
@@ -7636,7 +7886,7 @@ function buildTeam(){
     </tr>`;
   }
   h+=`</tbody></table></div></div>`;
-  if(isAdmin()){
+  if(isDirector()){
     const deactivated=st.users.filter(x=>x.deactivated);
     if(deactivated.length){
       h+=`<div class="card"><div class="card-title">Deactivated Team Members (${deactivated.length})</div>
@@ -7651,12 +7901,13 @@ function buildTeamDetail(name){
   const i=st.users.findIndex(x=>x.name===name);
   if(i<0){teamViewPerson=null;return buildTeam();}
   const u=st.users[i];
-  const admin=isAdmin();
+  const admin=isDirector(); // build 57: editing the profile, rates and role is the director's
   const isSelf=u.name===st.currentUser;
-  const fullView=admin||isSelf; // PMs see colleagues' profile, rates, week + timesheets only
+  const fullView=isAdmin()||isSelf; // PMs see colleagues' profile, week + timesheets only
+  const ratesView=isAdmin()||isSelf; // build 57: admins see billable rates (read only); PMs do not
+  const leaveView=isDirector()||isSelf; // build 57: leave balances are HR data
   const days=getWkDates(teamWkOff,7);
   const w=weekHoursFor(u.name,days),c=weekCapacityFor(u,days),sc=weekScheduledFor(u.name,days);
-  const roleLabel={admin:'Admin',pm:'Project Manager',member:'Member'};
   const wh=u.weeklyHours||37.5;
   let h=pageHead(escAttr(u.name),'team',`<button class="btn btn-sm" onclick="teamBack()">← All team members</button>`);
   const rateBtn=(val,scope)=>{const curV=(val!=null&&val!=='')?`£${val}/hr`:'—';return admin?`<button class="rate-btn" onclick="openRateModal('${scope}',${i})" title="View or change dated rates">${curV}<span style="font-size:11px;color:var(--grey)">✎</span></button>`:`<span style="font-weight:600">${curV}</span>`;};
@@ -7668,21 +7919,22 @@ function buildTeamDetail(name){
         <tr><td style="color:var(--dkgrey)">Role</td><td>${admin?`<select class="role-select" onchange="setUserRole(${i},this.value)" ${isSelf?'disabled title="You cannot change your own role"':''}>
           <option value="member" ${u.role==='member'?'selected':''}>Member</option>
           <option value="pm" ${u.role==='pm'?'selected':''}>Project Manager</option>
-          <option value="admin" ${u.role==='admin'?'selected':''}>Admin</option></select>`:`<span style="font-weight:600">${roleLabel[u.role]||'Member'}</span>`}</td></tr>
+          <option value="admin" ${u.role==='admin'?'selected':''}>Admin</option>
+          <option value="director" ${u.role==='director'?'selected':''}>Director</option></select>`:`<span style="font-weight:600">${roleLabelFor(u.role)}</span>`}</td></tr>
         <tr><td style="color:var(--dkgrey)">Weekly hours</td><td>${admin?`<div style="display:flex;align-items:center;gap:7px"><input type="number" class="hrs-input" value="${wh}" min="1" max="60" step="0.5" onchange="upWeekly(${i},this.value)"/><span style="font-size:12px;color:var(--dkgrey);font-weight:600">h/wk</span>${wh<37.5?'<span class="badge badge-info" style="font-size:9px">Part-time</span>':''}</div>`:`<span style="font-weight:600">${wh}h/wk</span>${wh<37.5?' <span class="badge badge-info" style="font-size:9px">Part-time</span>':''}`}</td></tr>
         ${u.startDate?`<tr><td style="color:var(--dkgrey)">Start date</td><td style="font-weight:600">${fmtLong(parseISO(u.startDate))}</td></tr>`:''}
         <tr><td style="color:var(--dkgrey)">Birthday</td><td>${(admin||cur().name===u.name)?`<input type="date" value="${escAttr(u.birthday||'')}" style="width:160px;font-size:11px;box-sizing:border-box" onchange="setUserBirthday(${i},this.value)"/>`:`<span style="font-weight:600">${u.birthday?fmtLong(parseISO(u.birthday)):'—'}</span>`}</td></tr>
-        ${u.selfApproveLeave?`<tr><td style="color:var(--dkgrey)">Leave</td><td><span class="badge badge-info" style="font-size:9px">Can self-approve</span></td></tr>`:''}
+        ${isDirector()&&u.selfApproveLeave?`<tr><td style="color:var(--dkgrey)">Leave</td><td><span class="badge badge-info" style="font-size:9px">Can self-approve</span></td></tr>`:''}
       </tbody></table>
       ${admin&&!isSelf?`<div style="margin-top:12px;display:flex;gap:8px"><button class="btn btn-sm" onclick="triggerDeactivateUser('${jsq(u.name)}')">Deactivate</button><button class="btn btn-danger btn-sm" onclick="rmU(${i})">Delete</button></div>`:''}
     </div>
-    <div class="card" style="flex:1;min-width:290px"><div class="card-title">Rates</div>
+    ${ratesView?`<div class="card" style="flex:1;min-width:290px"><div class="card-title">Rates</div>
       <table class="rtable"><tbody>
         <tr><td style="color:var(--dkgrey)">Billable rate</td><td>${rateBtn(u.billable,'billable')}</td><td style="font-size:10px;color:var(--grey)">${(u.rates||[]).length>1?`${(u.rates||[]).length-1} past change${(u.rates||[]).length===2?'':'s'}`:''}</td></tr>
-        <tr><td style="color:var(--dkgrey)">Cost rate</td><td>${rateBtn(u.cost,'cost')}</td><td style="font-size:10px;color:var(--grey)">${(u.costRates||[]).length>1?`${(u.costRates||[]).length-1} past change${(u.costRates||[]).length===2?'':'s'}`:''}</td></tr>
+        ${(admin||isSelf)?`<tr><td style="color:var(--dkgrey)">Cost rate</td><td>${rateBtn(u.cost,'cost')}</td><td style="font-size:10px;color:var(--grey)">${(u.costRates||[]).length>1?`${(u.costRates||[]).length-1} past change${(u.costRates||[]).length===2?'':'s'}`:''}</td></tr>`:''}
       </tbody></table>
       <div style="font-size:10px;color:var(--grey);margin-top:8px">Rates are effective-dated — past time keeps the rate that applied when it was worked.${admin?' Click a rate for its history.':''}</div>
-    </div>
+    </div>`:''}
   </div>`;
   // Week + timesheets
   const{unsubmitted,overdue}=subStatus(u.name);
@@ -7710,7 +7962,7 @@ function buildTeamDetail(name){
   const pEntries=cpdEntriesFor(u.name,yr);
   const arbRows=arbTopics().map(t=>({t,ok:pEntries.some(e=>entryCoversArb(e,t))}));
   if(fullView)h+=`<div class="card-row">
-    <div class="card" style="flex:1;min-width:290px"><div class="card-title">Leave — ${yr}</div>
+    ${leaveView?`<div class="card" style="flex:1;min-width:290px"><div class="card-title">Leave — ${yr}</div>
       <div style="display:flex;gap:20px;flex-wrap:wrap;margin-bottom:10px">
         <div><div class="metric-label">Entitlement</div><div class="metric-value" style="font-size:22px">${allow}</div></div>
         ${carry?`<div><div class="metric-label">Carried over</div><div class="metric-value" style="font-size:22px;color:var(--dkgrey)">+${carry}</div></div>`:''}
@@ -7719,7 +7971,7 @@ function buildTeamDetail(name){
       </div>
       ${upcoming.length?upcoming.map(r=>`<div style="font-size:12px;padding:2px 0;display:flex;justify-content:space-between;gap:10px"><span>${escAttr(r.type)}</span><span style="color:var(--dkgrey)">${fmt(parseISO(r.startDate))}${r.startDate!==r.endDate?' – '+fmt(parseISO(r.endDate)):''}${r.status==='pending'?' <span class="badge badge-pending" style="font-size:9px">pending</span>':''}</span></div>`).join(''):'<div style="font-size:12px;color:var(--dkgrey)">No upcoming leave.</div>'}
       <div style="margin-top:10px"><button class="btn btn-sm" onclick="tab('leave')">Open Leave page</button></div>
-    </div>
+    </div>`:''}
     <div class="card" style="flex:1;min-width:290px"><div class="card-title">CPD — ${yr}</div>
       <div style="display:flex;gap:20px;flex-wrap:wrap;margin-bottom:10px">
         <div><div class="metric-label">Hours (target 35)</div><div class="metric-value" style="font-size:22px;color:${cpdHrs>=35?'var(--blk)':'var(--dkgrey)'}">${cpdHrs.toFixed(1)}h</div></div>
@@ -8688,9 +8940,11 @@ function buildReports(){
 }
 
 // ── Event handlers ────────────────────────────────────────────────────────────
-window.tab=t=>{epLeave();projEditDraft={};st._tab=t;viewingUser=null;healthProj=null;editingProj=null;openActionMenu=null;expandedStage=null;editingSubmitted=new Set();activeNoteCell=null;st._projAddOpen=!!(st._projAddOpen&&fkScopeDirty('np'));save();render();}
+window.tab=t=>{tsChgDraft=null;epLeave();projEditDraft={};st._tab=t;viewingUser=null;healthProj=null;editingProj=null;openActionMenu=null;expandedStage=null;editingSubmitted=new Set();activeNoteCell=null;st._projAddOpen=!!(st._projAddOpen&&fkScopeDirty('np'));save();render();}
 window.cw=d=>{wkOff+=d;activeNoteCell=null;render();}
 window.goThisWeek=()=>{wkOff=0;activeNoteCell=null;render();}
+window.tsPickPerson=function(name){if(!isDirector()||!st.users.some(u=>u.name===name))return;viewingUser=name===cur().name?null:name;st._tab='log';activeNoteCell=null;render();}
+window.tsPickDate=function(iso){if(!isDirector()||!/^\d{4}-\d{2}-\d{2}$/.test(iso||''))return;const d=new Date(iso+'T00:00:00');if(isNaN(d))return;const mon=new Date(d);mon.setDate(d.getDate()-((d.getDay()+6)%7));const cm=getWkDates(0)[0];cm.setHours(0,0,0,0);wkOff=Math.round((mon-cm)/(7*86400000));st._tab='log';activeNoteCell=null;render();}
 window.openH=name=>{healthProj=name;healthSection='finance';openActionMenu=null;expandedStage=null;render();}
 window.healthSec=function(sec){healthSection=sec==='overview'?'overview':sec==='feeplan'?'feeplan':'finance';fpUI.pop=null;render();}
 window.openFeePlan=function(name){
@@ -8700,15 +8954,43 @@ window.openFeePlan=function(name){
 };
 window.closeH=()=>{healthProj=null;expandedStage=null;render();}
 window.togStage=function(name){expandedStage=expandedStage===name?null:name;render();}
-window.editSubmitted=function(person,wk){editingSubmitted.add(`${person}||${wk}`);render();}
+window.editSubmitted=function(person,wk){if(!tsMayEdit(person))return;editingSubmitted.add(`${person}||${wk}`);render();}
 window.cancelEditSubmitted=function(person,wk){editingSubmitted.delete(`${person}||${wk}`);render();}
-window.resubmitSubmitted=function(person,wk){if(wkDaysOver(person,wk).length)return;noUndo(()=>{st.submissions[`${person}||${wk}`]={at:new Date().toISOString()};save();});editingSubmitted.delete(`${person}||${wk}`);render();}
+window.resubmitSubmitted=function(person,wk){if(!tsMayEdit(person))return;if(wkDaysOver(person,wk).length)return;noUndo(()=>{st.submissions[`${person}||${wk}`]={at:new Date().toISOString()};save();});editingSubmitted.delete(`${person}||${wk}`);render();}
+// Build 58: a leave day on the timesheet is a choice (Full day / Half day), never
+// typed hours. Choosing one creates a leave request; the hours only appear once
+// it is approved (or straight away for a director with self-approve on, or when
+// a director records it for someone else). Bank Holiday is not leave: it is a
+// full day on an actual bank holiday only, and can be cleared if someone worked.
+// Hours that predate this rule (history, Belen's hours-based unpaid leave) show
+// as they are and can only be cleared.
+function lvCellHTML(o){
+  const {wk,type,person,d,v,dh,isBH,bhDay,canEdit}=o;
+  const dis=!canEdit?'disabled':'';
+  const data=`data-wk="${wk}" data-lt="${escAttr(type)}" data-pe="${escAttr(person)}" data-d="${d}" onchange="logLeave(this)"`;
+  const odd=v>0&&Math.abs(v-dh)>.01&&Math.abs(v-dh/2)>.01;
+  if(isBH){
+    if(!bhDay&&!v)return`<span style="color:var(--mid)">—</span>`;
+    if(!bhDay)return`<select class="tinput lv-sel" ${dis} ${data} title="Bank Holiday hours on a day that is not a bank holiday — clear only"><option value="odd" selected>${v}h</option><option value="">—</option></select>`;
+    return`<select class="tinput lv-sel" ${dis} ${data}><option value="" ${!v?'selected':''}>—</option><option value="full" ${v?'selected':''}>Full</option></select>`;
+  }
+  const cur=!v?'':odd?'odd':Math.abs(v-dh)<.01?'full':'half';
+  return`<select class="tinput lv-sel" ${dis} ${data} title="Full or half day — this creates a leave request">${odd?`<option value="odd" selected>${v}h</option>`:''}<option value="" ${cur===''?'selected':''}>—</option><option value="full" ${cur==='full'?'selected':''}>Full</option><option value="half" ${cur==='half'?'selected':''}>Half</option></select>`;
+}
 // Leave handlers
 window.logLeave=function(el){
+  if(!tsMayEdit(el.dataset.pe))return;
   const d=parseInt(el.dataset.d),wk=el.dataset.wk,type=el.dataset.lt,person=el.dataset.pe;
-  if(type==='Bank Holiday'){sL(wk,type,person,d,el.value);render();return;}
+  const choice=el.value;
+  if(choice==='odd'){render();return;}
   const dateISO=isoDate(addDays(planWkToDate(wk),d));
-  const v=parseFloat(el.value)||0;
+  if(type==='Bank Holiday'){
+    if(choice&&!UK_BH.has(dateISO)){undoToast('Bank Holiday can only be entered on a bank holiday.');render();return;}
+    sL(wk,type,person,d,choice?7.5:0);render();return;
+  }
+  if(choice&&choice!=='full'&&choice!=='half'){render();return;}
+  const dh=dailyHours(person);
+  const v=choice==='full'?dh:choice==='half'?dh/2:0;
   const covering=approvedReqCovering(person,dateISO,type);
   const own=person===st.currentUser;
   if(v===0){
@@ -8716,25 +8998,30 @@ window.logLeave=function(el){
     sL(wk,type,person,d,0);render();return;
   }
   if(covering){undoToast('Leave for this day is already approved. To change it, cancel the request on the Leave page and re-request.');render();return;}
-  if(!own&&isAdmin()){
-    // Admin recording on someone's behalf — books immediately + notice to check.
-    const half=v<=dailyHours(person)/2;
+  if(st.leaveRequests.some(r=>r.person===person&&r.status==='pending'&&r.startDate<=dateISO&&r.endDate>=dateISO)){undoToast('A leave request for this day is already awaiting approval. Change or withdraw it on the Leave page.');render();return;}
+  if(!own&&isDirector()){
+    // Director recording on someone's behalf — books immediately + notice to check.
+    const half=choice==='half';
     const out=createLeaveRequest(person,type,dateISO,dateISO,half?{[dateISO]:true}:{},'Recorded via timesheet','admin');
     if(out.error)undoToast(out.error);
     render();return;
   }
   if(!own){render();return;}
   // Own timesheet — leave entries route through a request (past dates allowed).
-  const half=v<=dailyHours(person)/2;
+  const half=choice==='half';
   const out=createLeaveRequest(person,type,dateISO,dateISO,half?{[dateISO]:true}:{},'Entered via timesheet','timesheet');
   if(out.error){undoToast(out.error);render();return;}
   if(out.request.status==='pending')undoToast('Leave request created for '+type+' on '+fmt(parseISO(dateISO))+' — the hours will appear once it\'s approved. The week can\'t be submitted while a request is pending.');
   render();
 }
-window.doAddLeaveType=function(wk,person){const sel=document.getElementById('leave-add-sel');if(!sel||!sel.value)return;addLeaveActive(wk,person,sel.value);render();}
-window.doRmLeaveType=function(wk,type,person){rmLeaveActive(wk,person,type);render();}
+window.doAddLeaveType=function(wk,person){if(!tsMayEdit(person))return;const sel=document.getElementById('leave-add-sel');if(!sel||!sel.value)return;addLeaveActive(wk,person,sel.value);render();}
+window.doRmLeaveType=function(wk,type,person){if(!tsMayEdit(person))return;
+  const mon=planWkToDate(wk);
+  for(let i=0;i<5;i++){if(gL(wk,type,person,i)>0&&approvedReqCovering(person,isoDate(addDays(mon,i)),type)){undoToast('This row holds approved leave. Cancel or change the request on the Leave page instead.');render();return;}}
+  rmLeaveActive(wk,person,type);render();}
 // Non-billable handlers
 window.logNB=function(el){
+  if(!tsMayEdit(el.dataset.pe))return;
   const d=parseInt(el.dataset.d);
   sNB(el.dataset.wk,el.dataset.nbt,el.dataset.pe,d,el.value);
   // In-place update, like logT — a full render() here fired on Tab-out and
@@ -8747,9 +9034,9 @@ window.logNB=function(el){
       tc.textContent=t||'';}}
   refreshHrsUI(el.dataset.wk,el.dataset.pe);
 }
-window.doAddNBType=function(wk,person){const sel=document.getElementById('nb-add-sel');if(!sel||!sel.value)return;addNBActive(wk,person,sel.value);render();}
-window.doRmNBType=function(wk,type,person){rmNBActive(wk,person,type);render();}
-window.togStageOT=function(wk,pj,ph,pe,checked){setOT(wk,pj,ph,pe,checked);render();}
+window.doAddNBType=function(wk,person){if(!tsMayEdit(person))return;const sel=document.getElementById('nb-add-sel');if(!sel||!sel.value)return;addNBActive(wk,person,sel.value);render();}
+window.doRmNBType=function(wk,type,person){if(!tsMayEdit(person))return;rmNBActive(wk,person,type);render();}
+window.togStageOT=function(wk,pj,ph,pe,checked){if(!tsMayEdit(pe))return;setOT(wk,pj,ph,pe,checked);render();}
 // Stage picker handlers — now replaced by inline dropdown, kept as no-ops for safety
 // New inline: project dropdown change → populate stage dropdown
 function projLabel(p){return (p.code?p.code+' — ':'')+(p.name);}
@@ -8789,6 +9076,7 @@ window.refreshStageDropdown=function(wk,person){
   available.forEach(ph=>{const o=document.createElement('option');o.value=ph.name;o.textContent=ph.name;sSel.appendChild(o);});
 }
 window.doAddProjStageToTS=function(wk,person){
+  if(!tsMayEdit(person))return;
   const pSel=document.getElementById('ts-addproj');
   const sSel=document.getElementById('ts-addstage');
   if(!pSel||!sSel||!pSel.value||!sSel.value)return;
@@ -8815,6 +9103,7 @@ window.doAddProjStageToTS=function(wk,person){
 }
 // Cell note handlers
 window.openCellNote=function(btn,wk,pj,ph,pe,day){
+  if(!tsMayEdit(pe)&&!getCellNote(wk,pj,ph,pe,day))return;
   const rect=btn.getBoundingClientRect();
   const viewH=window.innerHeight,viewW=window.innerWidth;
   let x=rect.right+8,y=rect.top-10;
@@ -8827,11 +9116,12 @@ window.openCellNote=function(btn,wk,pj,ph,pe,day){
   renderNotePopover();
 }
 window.closeNotePopover=function(){activeNoteCell=null;renderNotePopover();}
-window.saveCellNotePopover=function(){if(!activeNoteCell)return;const ta=document.getElementById('note-ta');if(!ta)return;setCellNote(activeNoteCell.wk,activeNoteCell.pj,activeNoteCell.ph,activeNoteCell.pe,activeNoteCell.day,ta.value);activeNoteCell=null;render();}
+window.saveCellNotePopover=function(){if(!activeNoteCell)return;if(!tsMayEdit(activeNoteCell.pe)){activeNoteCell=null;render();return;}const ta=document.getElementById('note-ta');if(!ta)return;setCellNote(activeNoteCell.wk,activeNoteCell.pj,activeNoteCell.ph,activeNoteCell.pe,activeNoteCell.day,ta.value);activeNoteCell=null;render();}
 window.clearCellNote=function(){if(!activeNoteCell)return;setCellNote(activeNoteCell.wk,activeNoteCell.pj,activeNoteCell.ph,activeNoteCell.pe,activeNoteCell.day,'');activeNoteCell=null;render();}
 // Copy from last week
-window.togNBOT=function(wk,type,person,checked){setNBOT(wk,type,person,checked);render();}
+window.togNBOT=function(wk,type,person,checked){if(!tsMayEdit(person))return;setNBOT(wk,type,person,checked);render();}
 window.copyFromLastWk=function(withHours){
+  if(!tsMayEdit(viewingUser||cur().name))return;
   const me=viewingUser||cur().name;
   const curWk=wkKey(getWkDates(wkOff));
   const prevWk=wkKey(getWkDates(wkOff-1));
@@ -8846,9 +9136,7 @@ window.copyFromLastWk=function(withHours){
     if(!st.userStages[me])st.userStages[me]={};
     if(!st.userStages[me][p]||!st.userStages[me][p].length)st.userStages[me][p]=[...prevStageSet];
   }
-  // Leave types
-  const prevLeave=getLeaveActive(prevWk,me);
-  for(const t of prevLeave)addLeaveActive(curWk,me,t);
+  // Leave is never copied (build 58): it only ever arrives through a request.
   // NB types
   const prevNB=getNBActive(prevWk,me);
   for(const t of prevNB)addNBActive(curWk,me,t);
@@ -8867,11 +9155,6 @@ window.copyFromLastWk=function(withHours){
     for(const[k,v]of Object.entries(st.entries)){
       const parts=k.split('||');
       if(parts[0]===prevWk&&parts[3]===me){const nk=`${curWk}||${parts[1]}||${parts[2]}||${parts[3]}||${parts[4]}`;if(!st.entries[nk])st.entries[nk]=v;}
-    }
-    // Leave hours
-    for(const[k,v]of Object.entries(st.leave)){
-      const[w,type,person,day]=k.split('||');
-      if(w===prevWk&&person===me){const nk=`${curWk}||${type}||${person}||${day}`;if(!st.leave[nk])st.leave[nk]=v;}
     }
     // NB hours (all 14 day indices)
     for(const[k,v]of Object.entries(st.nonBillable)){
@@ -8904,7 +9187,7 @@ function renderTsDue(){
   const body=rows.length?`<div style="max-height:52vh;overflow:auto;border:1px solid var(--mid);border-radius:8px"><table class="rtable" style="margin:0"><thead><tr><th>Week of</th><th>Hours</th><th>Status</th><th></th></tr></thead><tbody>${rows.map(r=>`<tr>
         <td style="white-space:nowrap;font-weight:600">${fmtLong(r.mon)}</td>
         <td style="white-space:nowrap${r.entered>0?'':';color:var(--grey)'}">${tsDueHrs(r)}</td>
-        <td>${r.overdue?'<span class="badge badge-overdue">Overdue</span>':'<span class="badge badge-pending">Awaiting submission</span>'}</td>
+        <td>${r.overdue?'<span class="badge badge-overdue">Overdue</span>':r.awaiting?'<span class="badge badge-pending">Awaiting leave approval</span>':'<span class="badge badge-pending">Awaiting submission</span>'}</td>
         <td style="text-align:right"><button class="btn btn-sm" onclick="tsDueGo('${r.wk}')" title="Open this week\u2019s timesheet">Open</button></td></tr>`).join('')}</tbody></table></div>`
     :`<div style="font-size:12px;color:var(--dkgrey)"><span class="badge badge-ok">✓ Up to date</span> Nothing outstanding: every week is submitted.</div>`;
   el.innerHTML=`<div class="modal-overlay" onclick="if(event.target===this&&window._ovMd===this)closeTsDue()">
@@ -8921,6 +9204,7 @@ function renderTsDue(){
 }
 window.closeViewUser=function(){viewingUser=null;st._tab='team';render();}
 window.rmStageFromTS=function(wk,projName,stageName,person){
+  if(!tsMayEdit(person))return;
   // A row with hours in THIS week can never be removed from it — clear the
   // hours first. (Hours in other weeks are irrelevant: those weeks derive
   // their own rows and are untouched by this removal.)
@@ -9029,7 +9313,7 @@ window.doLogout=()=>{st.currentUser=null;saveLocalUser(null);sbLogout();_appRead
 window.doCreateAdmin=async function(){
   const name=(document.getElementById('l-name').value||'').trim();
   if(!name)return;
-  st.users.push({name,email:_sbSession.email,password:'',billable:0,cost:0,weeklyHours:37.5,role:'admin',rates:[{from:'2000-01-01',rate:0}],costRates:[{from:'2000-01-01',rate:0}]});
+  st.users.push({name,email:_sbSession.email,password:'',billable:0,cost:0,weeklyHours:37.5,role:'director',rates:[{from:'2000-01-01',rate:0}],costRates:[{from:'2000-01-01',rate:0}]});
   st.currentUser=name;saveLocalUser(name);
   try{await sbSaveNow();}catch(e){console.error('Initial save failed:',e);_sbSaveError=true;}
   sbStartPolling();
@@ -9043,7 +9327,7 @@ window.doMigrate=async function(){
   errEl.style.display='none';
   try{
     // Add email to the user that matches the current auth session
-    const me=st.users.find(u=>u.name===(loadLocalState()||{}).currentUser)||st.users.find(u=>u.role==='admin');
+    const me=st.users.find(u=>u.name===(loadLocalState()||{}).currentUser)||st.users.find(u=>roleIsAdmin(u.role));
     if(me)me.email=_sbSession.email;
     // Merge-safe upload of the local dataset (no currentUser; rev-checked)
     await sbSaveNow();
@@ -9065,12 +9349,12 @@ window.addU=function(){
   teamAddOpen=false;
   save();render();
 }
-window.rmU=function(i){const u=st.users[i];if(!u||u.name===st.currentUser)return;triggerDeleteUser(u.name);}
-window.upWeekly=(i,v)=>{const n=parseFloat(v);st.users[i].weeklyHours=(!isNaN(n)&&n>0)?n:37.5;save();}
-window.setUserRole=(i,role)=>{const u=st.users[i];if(!u||u.name===st.currentUser)return;if(!['admin','pm','member'].includes(role))return;u.role=role;save();render();}
-window.setUserEmail=(i,val)=>{const u=st.users[i];if(!u)return;const em=val.trim().toLowerCase();if(em&&st.users.find((x,j)=>j!==i&&x.email===em)){undoToast('That email is already linked to another team member.');render();return;}u.email=em;save();}
-window.setUserBirthday=(i,val)=>{const u=st.users[i];if(!u)return;if(!isAdmin()&&cur().name!==u.name)return;u.birthday=val||'';save();}
-window.doSubmit=(person,wk)=>{doSub(person,wk);}
+window.rmU=function(i){if(!isDirector())return;const u=st.users[i];if(!u||u.name===st.currentUser)return;triggerDeleteUser(u.name);}
+window.upWeekly=(i,v)=>{if(!isDirector())return;const n=parseFloat(v);st.users[i].weeklyHours=(!isNaN(n)&&n>0)?n:37.5;save();}
+window.setUserRole=(i,role)=>{if(!isDirector())return;const u=st.users[i];if(!u||u.name===st.currentUser)return;if(!['director','admin','pm','member'].includes(role))return;u.role=role;save();render();}
+window.setUserEmail=(i,val)=>{if(!isDirector())return;const u=st.users[i];if(!u)return;const em=val.trim().toLowerCase();if(em&&st.users.find((x,j)=>j!==i&&x.email===em)){undoToast('That email is already linked to another team member.');render();return;}u.email=em;save();}
+window.setUserBirthday=(i,val)=>{const u=st.users[i];if(!u)return;if(!isDirector()&&cur().name!==u.name)return;u.birthday=val||'';save();}
+window.doSubmit=(person,wk)=>{if(!tsMayEdit(person))return;doSub(person,wk);}
 // Shared markup for the hours-bar status panel (used at render and by refreshHrsUI)
 function hrsStatusHTML(remaining,target,hrsOk,hrsOver){
   return hrsOk?`<span style="color:var(--ok);font-weight:700;font-size:13px">✓ Complete</span>`
@@ -9111,7 +9395,7 @@ function refreshHrsUI(wk,person){
   const btn=document.getElementById('sub-hrs-btn');
   if(btn)btn.disabled=!hrsOk||overDays.length>0;
 }
-window.logT=function(el){sE(el.dataset.wk,el.dataset.pj,el.dataset.ph,el.dataset.pe,parseInt(el.dataset.d),el.value);const tr=el.closest('tr');const tc=tr.querySelector('.total-col,.total-cell');if(tc){const d=parseInt(el.dataset.d);const isOT=d>=7;let t=0;if(isOT){for(let i=7;i<14;i++)t+=parseFloat(gE(el.dataset.wk,el.dataset.pj,el.dataset.ph,el.dataset.pe,i))||0;}else{const days=tr.querySelectorAll('input.tinput').length;for(let i=0;i<days;i++)t+=parseFloat(gE(el.dataset.wk,el.dataset.pj,el.dataset.ph,el.dataset.pe,i))||0;}tc.textContent=t||'';}refreshHrsUI(el.dataset.wk,el.dataset.pe);}
+window.logT=function(el){if(!tsMayEdit(el.dataset.pe))return;sE(el.dataset.wk,el.dataset.pj,el.dataset.ph,el.dataset.pe,parseInt(el.dataset.d),el.value);const tr=el.closest('tr');const tc=tr.querySelector('.total-col,.total-cell');if(tc){const d=parseInt(el.dataset.d);const isOT=d>=7;let t=0;if(isOT){for(let i=7;i<14;i++)t+=parseFloat(gE(el.dataset.wk,el.dataset.pj,el.dataset.ph,el.dataset.pe,i))||0;}else{const days=tr.querySelectorAll('input.tinput').length;for(let i=0;i<days;i++)t+=parseFloat(gE(el.dataset.wk,el.dataset.pj,el.dataset.ph,el.dataset.pe,i))||0;}tc.textContent=t||'';}refreshHrsUI(el.dataset.wk,el.dataset.pe);}
 window.addPR=function(){const el=document.getElementById('np-ph');const ph=el?(el.value||'').trim():'';if(!ph)return;if(!npList().includes(ph))npList().push(ph);fkClear('np-ph');render();const e2=document.getElementById('np-ph');if(e2&&e2.focus)e2.focus();}
 // ── Project company picker ────────────────────────────────────────────────────
 // One list of every company the practice knows, so a company added in the CRM
@@ -9298,6 +9582,7 @@ window.doConfirmModalSubmit=function(){
 // override. Shows the dated history and lets you append a "new rate from <date>".
 window.openRateModal=function(scope,userIdx,projIdx,person){
   if(!isAdmin())return;
+  if((scope==='billable'||scope==='cost')&&!isDirector())return; // build 57: staff rates are the director's
   rateModalState={scope,userIdx:userIdx??null,projIdx:projIdx??null,person:person||null,addDate:'',addRate:''};
   renderRateModal();
 }
@@ -9468,11 +9753,11 @@ function renderRateModal(){
 
 // Add-team-member modal (was an always-open form card above the tables).
 let teamAddOpen=false;
-window.openTeamAdd=function(){teamAddOpen=true;render();}
+window.openTeamAdd=function(){if(!isDirector())return;teamAddOpen=true;render();}
 window.closeTeamAdd=function(){teamAddOpen=false;render();}
 function renderTeamAddModal(){
   const el=document.getElementById('team-add-container');if(!el)return;
-  if(!teamAddOpen||!isAdmin()){el.innerHTML='';return;}
+  if(!teamAddOpen||!isDirector()){el.innerHTML='';return;}
   el.innerHTML=`<div class="modal-overlay" onclick="if(event.target===this&&window._ovMd===this)fkClose(this,'closeTeamAdd')">
     <div class="modal-box" style="width:440px" onclick="event.stopPropagation()">
       <div class="note-popover-hdr"><span>Add team member</span><button onclick="fkClose(this,'closeTeamAdd')" style="background:none;border:none;cursor:pointer;font-size:14px;font-weight:700;color:var(--dkgrey)">×</button></div>
@@ -9480,7 +9765,7 @@ function renderTeamAddModal(){
         <div style="margin-bottom:12px"><label>Name</label><input id="nt-nm" placeholder="e.g. Jane Smith" style="width:100%;box-sizing:border-box"/></div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
           <div><label>Email</label><input id="nt-em" type="email" placeholder="jane@amnarchitects.co.uk" style="width:100%;box-sizing:border-box"/></div>
-          <div><label>Role</label><select id="nt-role" style="width:100%"><option value="member">Member</option><option value="pm">Project Manager</option><option value="admin">Admin</option></select></div>
+          <div><label>Role</label><select id="nt-role" style="width:100%"><option value="member">Member</option><option value="pm">Project Manager</option><option value="admin">Admin</option><option value="director">Director</option></select></div>
         </div>
         <div style="font-size:10px;color:var(--grey);margin-top:8px">Rates can be set from the team table once the person exists. The email must match the login account created in Supabase.</div>
       </div>
@@ -9521,10 +9806,11 @@ window.doUnarchiveProject=function(name){const p=st.projects.find(x=>x.name===na
 
 // ── Deactivate / Reactivate a team member (reversible, no data touched) ────────
 window.triggerDeactivateUser=function(name){
+  if(!isDirector())return;
   openConfirmModal('Deactivate team member',`Deactivate "${escAttr(name)}"? They won't be able to log in or be assigned new work, but all their logged time and history stays exactly as it is — you can reactivate them any time.`,'deactivate','doDeactivateUser',[name]);
 }
-window.doDeactivateUser=function(name){const u=st.users.find(x=>x.name===name);if(!u||name===st.currentUser)return;u.deactivated=true;save();render();}
-window.doReactivateUser=function(name){const u=st.users.find(x=>x.name===name);if(!u)return;u.deactivated=false;save();render();}
+window.doDeactivateUser=function(name){if(!isDirector())return;const u=st.users.find(x=>x.name===name);if(!u||name===st.currentUser)return;u.deactivated=true;save();render();}
+window.doReactivateUser=function(name){if(!isDirector())return;const u=st.users.find(x=>x.name===name);if(!u)return;u.deactivated=false;save();render();}
 
 // ── Delete (soft) — sweeps everything directly tied to the item into one trash entry
 function pushTrash(kind,label,payload){
@@ -9676,7 +9962,7 @@ function restoreUserData(b){
   st.planAssignments.push(...(b.planAssignments||[]));
 }
 window.triggerDeleteUser=function(name){
-  if(name===st.currentUser)return;
+  if(!isDirector()||name===st.currentUser)return;
   openConfirmModal('Delete team member',`Delete "${escAttr(name)}"? This removes them — and all their logged time, forecasts, leave and non-billable history — from active use. It'll sit in Deleted Items until restored or purged.`,'delete','doDeleteUser',[name]);
 }
 window.doDeleteUser=function(name){
@@ -9921,12 +10207,14 @@ const HELP_TEXT={
     <p style="margin:0 0 8px"><b>Events.</b> Conferences get an event: who you plan to meet, who you actually met, and which of us attended — attendance writes <b>Marketing and BD</b> time to those timesheets. The large notes box holds the programme and speakers.</p>
     <p style="margin:0"><b>Active clients.</b> A company shows the <span class="badge badge-ok">client</span> badge once it has a project on the Projects page. One dataset, no separate list.</p>`},
   leave:{title:'How leave works',body:`
-    <p><b>Request:</b> pick a type and your dates (weekends and bank holidays don't count — they're already off), tick any half days, and submit. Requests go to an admin; nobody approves their own leave. You can also start a request by entering leave hours on your timesheet (past weeks included) or clicking a day on your forecast leave row.</p>
+    <p><b>Request:</b> pick a type and your dates (weekends and bank holidays don't count — they're already off), tick any half days, and submit. Requests go to a director, who decides them (a director's own requests are booked straight away if self-approval is switched on for them, otherwise another director decides them). You can also start a request on your timesheet (past weeks included) by choosing <b>Full</b> or <b>Half</b> for a day on a leave row, or by clicking a day on your forecast leave row. Leave is always a full or half day; hours can't be typed, and leave is never copied from last week. A week waiting on a leave decision shows as awaiting approval rather than overdue.</p>
     <p><b>On approval</b> the days book onto your timesheet at your normal daily hours, show on the forecast and calendar, and — for Annual leave only — come off your allowance. If any day falls in a week already submitted, that timesheet reopens automatically with a notice to resubmit, so the calendar, forecast and timesheets always agree. Unpaid and other leave types are recorded but never touch the allowance; unpaid leave has no cap and is discretionary. A week with a pending leave request can't be submitted until it's decided.</p>
-    <p><b>Privacy:</b> everyone can see who's off and when; the <i>type</i> of leave is visible only to you and admins.</p>
+    <p><b>Privacy:</b> everyone can see who's off and when, shown as <i>Away</i>; the <i>type</i> of leave and any note are visible only to you and directors. For sickness, no medical details are needed.</p>
+    <p><b>Bank holidays</b> fill themselves in as a full day. Clear one only if you worked it; they can't be added on other days.</p>
     <p><b>School holidays:</b> the orange bar along the top of the team calendar marks typical England school holidays (approximate — councils vary), to help plan family leave around them.</p>
-    <p><b>Allowance:</b> 25 days a year pro-rata to your working week, editable per person. Up to 5 unused days carry over automatically and are usable until 31 December of the next year — admins can set the carried number directly (e.g. for TOIL).</p>
-    <p><b>Recorded for you:</b> an admin can log leave on your behalf (e.g. sickness) — you'll get a notice to check it's right.</p>`},
+    <p><b>Allowance:</b> 25 days a year pro-rata to your working week, editable per person. Up to 5 unused days carry over automatically and are usable until 31 December of the next year — directors can set the carried number directly (e.g. for TOIL).</p>
+    <p><b>Recorded for you:</b> a director can log leave on your behalf (e.g. sickness) — you'll get a notice to check it's right.</p>
+    <p><b>Leave summary (directors):</b> the Leave page shows every person's year: entitlement, carried over, annual leave taken each month, pending, remaining (red when below zero) and days of every other leave type, with a year picker and a CSV export. Years before 2026 predate the tracker and are read from the timesheets, so they show days taken only.</p>`},
   import:{title:'How the data page works',body:`
     <p style="margin:0 0 8px"><b>Setup imports (retired).</b> The one-time imports that first populated the app — Harvest history, the CRM BD tracker, and leave &amp; CPD history — have been retired now the app is live, so they can't be re-run against the shared data by accident. Add time, leave and CPD from their own pages from here on.</p>
     <p style="margin:0 0 8px"><b>Backup and restore.</b> Live data sits in the shared cloud database with automatic nightly backups; the JSON download here is an extra portable copy you control. Take one occasionally and before any big change. Restoring replaces the current data entirely, so back up first.</p>
@@ -11499,7 +11787,7 @@ function buildMobLeave(){
   // who's away this week
   const days=getWkDates(0,7);const s0=isoDate(days[0]),e0=isoDate(days[6]);
   const away=st.leaveRequests.filter(r=>r.status==='approved'&&r.startDate<=e0&&r.endDate>=s0);
-  h+=`<div class="mob-card" style="margin-top:10px"><div class="mc-title">Away this week</div>${away.length?away.map(r=>`<div style="font-size:12.5px;padding:3px 0">${escAttr(r.person)} — ${escAttr(r.person===me||isAdmin()?r.type:'Leave')}, ${fmt(parseISO(r.startDate))}${r.startDate!==r.endDate?' – '+fmt(parseISO(r.endDate)):''}</div>`).join(''):'<div style="font-size:12px;color:var(--grey)">Nobody away.</div>'}</div>`;
+  h+=`<div class="mob-card" style="margin-top:10px"><div class="mc-title">Away this week</div>${away.length?away.map(r=>`<div style="font-size:12.5px;padding:3px 0">${escAttr(r.person)} — ${escAttr(r.person===me||isDirector()?r.type:'Away')}, ${fmt(parseISO(r.startDate))}${r.startDate!==r.endDate?' – '+fmt(parseISO(r.endDate)):''}</div>`).join(''):'<div style="font-size:12px;color:var(--grey)">Nobody away.</div>'}</div>`;
   // my requests
   const mine=st.leaveRequests.filter(r=>r.person===me&&!r.closure).sort((a,b)=>b.startDate.localeCompare(a.startDate)).slice(0,12);
   h+=`<div class="mob-card" style="margin-top:10px"><div class="mc-title">My requests</div>${mine.length?mine.map(r=>{
@@ -11547,7 +11835,7 @@ window.mobLvRequest=function(){
 const MOB_LV_ABBR={'Annual leave':'AL','Sick leave':'Sick','Unpaid leave':'Unpd','Paternity':'Pat','Maternity':'Mat','Study leave':'Study','Compassionate leave':'Comp','Jury Service':'Jury','Leave':'Away',"Unpaid carer's leave":'Carer','Unpaid parental leave':'Par','Bank Holiday':'BH'};
 // Leave types are masked from everyone but the person themselves and admins —
 // same rule as the desktop team calendar and the mobile away card.
-function mobLvType(r){return(r.person===cur().name||isAdmin())?r.type:'Leave';}
+function mobLvType(r){return(r.person===cur().name||isDirector())?r.type:'Away';}
 function mobLvAbbr(t){return MOB_LV_ABBR[t]||String(t||'Leave').slice(0,4);}
 function mobDayLeave(iso,person){return st.leaveRequests.filter(r=>(r.status==='approved'||r.status==='pending')&&(!person||r.person===person)&&r.startDate<=iso&&iso<=r.endDate);}
 function mobDayEvents(iso){return st.crmEvents.filter(e=>{const a=e.start,b=e.end||e.start;return!!a&&a<=iso&&iso<=b;});}
@@ -11601,6 +11889,8 @@ function mobNotices(){
     rows+=note('info',`CPD time is waiting to go into a submitted week: <b>${escAttr(n.title)}</b> — ${n.hours}h on ${fmt(parseISO(n.date))}. Accepting reopens that week to rebalance.`,`<button class="mob-nbtn" onclick="acceptCpdNotice('${jsq(n.id)}')">Accept</button><button class="mob-nbtn sec" onclick="dismissCpdNotice('${jsq(n.id)}')">Ignore</button>`);
   for(const n of myLeaveNotices())
     rows+=note('info',escAttr(n.text||'Leave was recorded or amended on your behalf.'),`<button class="mob-nbtn sec" onclick="dismissLeaveNotice('${jsq(n.id)}')">Got it</button>`);
+  for(const r of tsChgFor(me))rows+=note('warn',`<b>${escAttr(r.by)}</b> has asked for changes to your timesheet for the week of ${fmt(planWkToDate(r.wk))}:<br>${r.changes.map(c=>escAttr(tsChgLine(r,c))).join('<br>')}${r.message?`<br><i>${escAttr(r.message)}</i>`:''}`,`<button class="mob-nbtn" onclick="tsChgAccept('${r.id}')">Accept</button><button class="mob-nbtn sec" onclick="tsChgDecline('${r.id}')">Decline</button>`);
+  for(const r of tsChgFeedback(me))rows+=note('info',`${escAttr(r.person)} ${r.status==='accepted'?'accepted':'declined'} your change request for the week of ${fmt(planWkToDate(r.wk))}.`,`<button class="mob-nbtn sec" onclick="tsChgAck('${r.id}')">Got it</button>`);
   const appr=st.leaveRequests.filter(r=>r.status==='pending'&&canApproveLeave(r));
   if(appr.length)rows+=note('warn',`<b>${appr.length} leave request${appr.length===1?'':'s'}</b> awaiting your approval.`,`<button class="mob-nbtn" onclick="mobNav('leave')">Review</button>`);
   const wr=cpdWriteupsDue(me);
