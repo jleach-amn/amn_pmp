@@ -166,6 +166,18 @@ input::placeholder,textarea::placeholder{color:var(--grey);opacity:.85}input[typ
 .tsmaster tr.add-row td{padding:7px 10px;background:var(--off);border-top:1px dashed var(--mid)}
 .tsmaster tr.leave-row td{background:#F2F5EA}
 .lv-sel{width:100%;max-width:64px;font-size:11px;padding:2px 2px;text-align:center}
+.card.lv-coll>:not(.card-title):not(.lv-head){display:none!important}
+.lv-sum-tbl th,.lv-sum-tbl td{padding-left:7px!important;padding-right:7px!important}
+.card.lv-coll>.lv-head,.card.lv-coll>.card-title{margin-bottom:0!important}
+.lv-caret{display:inline-block;width:16px;color:var(--grey);font-size:11px}
+.lv-sum-tbl th{white-space:nowrap}
+.lv-sum-tbl td.lv-sum-click{cursor:pointer;text-decoration:underline dotted;text-underline-offset:3px}
+.lv-sum-tbl td.lv-sum-click:hover{outline:1px solid var(--accent);outline-offset:-1px}
+.lv-sum-tbl tr.lv-sum-me>td:first-child{background:var(--off)}
+.lv-rem-pos{background:#DCEBD3!important;color:#2F5A1F!important}
+.lv-rem-neg{background:#F6D0CB!important;color:#A01F12!important}
+.lv-key-sw{display:inline-block;min-width:22px;padding:1px 5px;border-radius:4px;font-weight:700;font-size:10px;text-align:center;margin-right:3px}
+.lv-sum-chip{display:inline-block;font-size:11px;padding:2px 8px;border-radius:10px;border:1px solid}
 .tsmaster tr.nb-row td{background:#EFF2F5}
 .tsmaster tr.proj-first-in-group td{border-top:2px solid var(--blk)}
 .tsmaster tr.ot-row td{background:#FAF1DC}
@@ -824,7 +836,7 @@ const STORE_KEY='amn_tracker_v1';
 // The newest build anyone opens records its number in the shared state
 // (st.meta.appBuild); a copy whose APP_BUILD is lower shows a "reopen from
 // your bookmark" banner. APP_VERSION_LABEL is the human-facing date, display only.
-const APP_BUILD=59;
+const APP_BUILD=60;
 const APP_VERSION_LABEL='22 Oct 2026';
 // The portal's one door since the SharePoint copy was retired (Joe, 5 Sep 2026).
 // Both the stale-copy banner and the sidebar tooltip read from these, so the
@@ -2283,8 +2295,8 @@ function buildLeaveCalendar(){
   const monthLabel=base.toLocaleDateString('en-GB',{month:'long',year:'numeric'});
   const people=st.users.filter(u=>!u.deactivated).map(u=>u.name);
   const isAd=isDirector();
-  let h=`<div class="card"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
-    <div class="card-title" style="margin:0">Team calendar — ${monthLabel}</div>
+  let h=`<div class="${lvCardCls('cal')}"><div class="lv-head" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+    <div class="card-title" style="margin:0;cursor:pointer" onclick="lvTogCard('cal')">${lvCaret('cal')}Team calendar, ${monthLabel}</div>
     <span style="display:flex;gap:8px"><button class="btn btn-sm" onclick="leaveCalNav(-1)">← prev</button><button class="btn btn-sm" onclick="leaveCalOff=0;render()">Today</button><button class="btn btn-sm" onclick="leaveCalNav(1)">next →</button></span>
   </div><div class="tbl-freeze"><table class="lv-cal"><thead><tr class="lv-cal-sch-row"><th class="lv-cal-sch"></th>`;
   for(let d=1;d<=nDays;d++){const iso=isoDate(new Date(y,mo,d));const on=inSchoolHol(iso);h+=`<th class="lv-cal-sch${on?' on':''}"${on?' title="School holidays (England, approximate)"':''}></th>`;}
@@ -2356,11 +2368,12 @@ function buildLeave(){
   const otherTaken=REQUESTABLE_LEAVE.filter(t=>t!=='Annual leave').map(t=>({t,n:typeBookedDays(me,year,t)})).filter(x=>x.n);
   if(otherTaken.length)h+=`<div style="font-size:11px;color:var(--dkgrey);margin:-6px 0 14px 2px">Also taken this year: ${otherTaken.map(x=>`${x.t} ${x.n}d`).join(' · ')}</div>`;
   // Calendar — click any open day on your row (or anyone's, as admin) to add leave
+  if(isAd)h+=buildLeaveSummaryCard(me);
   h+=buildLeaveCalendar();
   // Admin: approvals (only when there is something to act on)
   if(isAd&&adminPendingLeave().length){
     const pending=adminPendingLeave();
-    h+=`<div class="card"><div class="card-title">Approvals — ${pending.length} pending</div>`;
+    h+=`<div class="${lvCardCls('approvals')}"><div class="card-title" style="cursor:pointer" onclick="lvTogCard('approvals')">${lvCaret('approvals')}Approvals: ${pending.length} pending</div>`;
     {
       h+=`<div class="tbl-freeze"><table class="rtable"><thead><tr><th>Person</th><th>Type</th><th>Dates</th><th>Days</th><th>Note</th><th>Admin note</th><th>Action due</th><th></th></tr></thead><tbody>`;
       for(const r of pending.slice().sort((a,b)=>a.startDate<b.startDate?-1:1)){
@@ -2381,7 +2394,7 @@ function buildLeave(){
     const actionReqs=st.leaveRequests.filter(r=>r.adminActionDue&&!r.adminActionDone&&r.status!=='cancelled'&&r.status!=='declined').sort((a,b)=>a.adminActionDue<b.adminActionDue?-1:1);
     if(actionReqs.length){
       const todayISO=isoDate(new Date());
-      h+=`<div class="card"><div class="card-title">Leave actions — ${actionReqs.length} open</div>`;
+      h+=`<div class="${lvCardCls('actions')}"><div class="card-title" style="cursor:pointer" onclick="lvTogCard('actions')">${lvCaret('actions')}Leave actions: ${actionReqs.length} open</div>`;
       h+=`<table class="rtable"><thead><tr><th>Person</th><th>Type</th><th>Dates</th><th>Due</th><th>Note</th><th></th></tr></thead><tbody>`;
       for(const r of actionReqs){
         const overdue=r.adminActionDue<todayISO;
@@ -2396,7 +2409,7 @@ function buildLeave(){
   }
   // My requests
   const mine=st.leaveRequests.filter(r=>r.person===me).slice().sort((a,b)=>a.startDate<b.startDate?1:-1);
-  h+=`<div class="card"><div class="card-title">My requests</div>`;
+  h+=`<div class="${lvCardCls('mine')}"><div class="card-title" style="cursor:pointer" onclick="lvTogCard('mine')">${lvCaret('mine')}My requests (${mine.length})</div>`;
   if(!mine.length)h+=`<div style="font-size:12px;color:var(--grey)">No requests yet.</div>`;
   else{
     h+=`<div class="tbl-freeze"><table class="rtable"><thead><tr><th>Type</th><th>Dates</th><th>Days</th><th>Status</th><th>Note</th><th></th></tr></thead><tbody>`;
@@ -2414,9 +2427,7 @@ function buildLeave(){
   // Admin: team summary + closures
   if(isAd){
     const others=st.users.filter(u=>!u.deactivated);
-    h+=buildLeaveSummaryCard(me);
-    h+=`</div>`;
-    if(st.leaveClosures.length)h=h.slice(0,-8)+`<div style="font-size:11px;color:var(--dkgrey);margin-top:10px"><b>Office closures:</b> ${st.leaveClosures.map(c=>`${escAttr(c.label)} (${fmt(parseISO(c.startDate))} – ${fmt(parseISO(c.endDate))}) <button class="btn btn-sm" style="font-size:9px;padding:1px 6px" onclick="rmLeaveClosure('${c.id}')">remove</button>`).join(' · ')} <span style="color:var(--grey)">— add via + Add leave → Everyone</span></div></div>`;
+    if(st.leaveClosures.length)h+=`<div class="card"><div style="font-size:11px;color:var(--dkgrey)"><b>Office closures:</b> ${st.leaveClosures.map(c=>`${escAttr(c.label)} (${fmt(parseISO(c.startDate))} – ${fmt(parseISO(c.endDate))}) <button class="btn btn-sm" style="font-size:9px;padding:1px 6px" onclick="rmLeaveClosure('${c.id}')">remove</button>`).join(' · ')} <span style="color:var(--grey)">— add via + Add leave → Everyone</span></div></div>`;
   }
   return h;
 }
@@ -2429,8 +2440,13 @@ function buildLeave(){
 // tracker, so they are read from the timesheet leave boxes (hours / daily hours)
 // and labelled as such; there is no entitlement or balance for them.
 let lvSumYear=null;
+// Leave page cards fold away (build 60). Remembered per browser; My requests starts folded.
+let lvCollapsed=(()=>{try{const v=JSON.parse(localStorage.getItem('amn_lv_cards')||'null');if(Array.isArray(v))return new Set(v);}catch(e){}return new Set(['mine']);})();
+function lvCardCls(id){return'card'+(lvCollapsed.has(id)?' lv-coll':'');}
+function lvCaret(id){return`<span class="lv-caret">${lvCollapsed.has(id)?'▸':'▾'}</span>`;}
+window.lvTogCard=function(id){if(lvCollapsed.has(id))lvCollapsed.delete(id);else lvCollapsed.add(id);try{localStorage.setItem('amn_lv_cards',JSON.stringify([...lvCollapsed]));}catch(e){}render();};
 const LV_MONTHS=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-window.setLvSumYear=function(y){if(!isDirector())return;lvSumYear=parseInt(y,10)||null;render();};
+window.setLvSumYear=function(y){if(!isDirector())return;lvSumYear=parseInt(y,10)||null;lvSumDet=null;render();};
 function lvSumYears(){
   const now=new Date().getFullYear();const ys=new Set([now,now+1,LEAVE_BASE_YEAR]);
   for(const k of Object.keys(st.leave)){const [wk,type,,di]=k.split('||');if(type==='Bank Holiday')continue;const y=addDays(planWkToDate(wk),+di||0).getFullYear();if(y)ys.add(y);}
@@ -2473,30 +2489,91 @@ function lvSumTypeCols(rows){
   const extra=[...new Set(rows.flatMap(r=>Object.keys(r.types)))].filter(t=>t!=='Annual leave'&&!base.includes(t)&&rows.some(r=>r.types[t]));
   return[...base,...extra];
 }
+// Build 60: grouped and coloured. Annual leave (entitlement, carried, total, taken by
+// month, taken, pending, remaining in green or red) is one salmon block; every other
+// leave type is a yearly total in its own calendar colour, with a key. Any number can
+// be clicked to list the dates behind it (lvSumDet), shown in a row under the person.
+let lvSumDet=null;
+window.lvSumShow=function(person,type,month,pending){
+  if(!isDirector())return;
+  const y=lvSumYear||new Date().getFullYear();
+  const same=lvSumDet&&lvSumDet.person===person&&lvSumDet.type===type&&lvSumDet.month===month&&!!lvSumDet.pending===!!pending&&lvSumDet.year===y;
+  lvSumDet=same?null:{person,type,month,pending:!!pending,year:y};render();
+};
+function lvSumDates(person,year,type,month,pending){
+  const out=[];
+  if(year<LEAVE_BASE_YEAR){
+    for(const [k,v] of Object.entries(st.leave)){
+      const [wk,t,p,di]=k.split('||');if(p!==person||t!==type)continue;
+      const h=parseFloat(v)||0;if(!h)continue;
+      const d=addDays(planWkToDate(wk),+di);
+      if(d.getFullYear()!==year||(month>=0&&d.getMonth()!==month))continue;
+      out.push({iso:isoDate(d),hours:h});
+    }
+  }else{
+    for(const r of st.leaveRequests){
+      if(r.person!==person||r.type!==type||r.status!==(pending?'pending':'approved'))continue;
+      let d=parseISO(r.startDate);const end=parseISO(r.endDate);
+      while(d<=end){
+        if(!isClosedDate(d)&&d.getFullYear()===year&&(month<0||d.getMonth()===month))out.push({iso:isoDate(d),half:!!(r.halfDays&&r.halfDays[isoDate(d)]),note:r.note||''});
+        d=addDays(d,1);
+      }
+    }
+  }
+  return out.sort((a,b)=>a.iso<b.iso?-1:a.iso>b.iso?1:0);
+}
 function buildLeaveSummaryCard(me){
   if(!isDirector())return'';
   const year=lvSumYear||new Date().getFullYear();
   const rows=lvSummaryRows(year),fromTs=year<LEAVE_BASE_YEAR,cols=lvSumTypeCols(rows);
+  const AL=(LEAVE_TYPE_META['Annual leave']||{}).color||'#F7C5BB';
   const n=x=>x?String(+(+x).toFixed(2)):'·';
-  const code=t=>(LEAVE_TYPE_META[t]&&LEAVE_TYPE_META[t].code)||t;
+  const meta=t=>LEAVE_TYPE_META[t]||{code:t,color:'#C9C3BA',dark:false};
   const sum=f=>rows.reduce((a,r)=>a+(f(r)||0),0);
-  let h=`<div class="card lv-summary"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px"><div class="card-title" style="margin:0">Leave summary — ${year}</div>
+  const clk=(p,t,m,pend,v)=>v?` class="lv-sum-click" title="Show the dates" onclick="lvSumShow('${jsq(p)}','${jsq(t)}',${m},${pend?1:0})"`:'';
+  const nAL=(fromTs?0:3)+12+1+(fromTs?0:2);
+  const nCols=1+nAL+cols.length+(fromTs?0:2);
+  const alBg='background:#FDF1EE';
+  const sepL='border-left:2px solid var(--blk)';
+  let h=`<div class="${lvCardCls('summary')} lv-summary"><div class="lv-head" style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px"><div class="card-title" style="margin:0;cursor:pointer" onclick="lvTogCard('summary')">${lvCaret('summary')}Leave summary ${year}</div>
     <div style="display:flex;gap:8px;align-items:center"><select id="lvsum-year" onchange="setLvSumYear(this.value)" style="font-size:11px;width:auto">${lvSumYears().map(y=>`<option value="${y}" ${y===year?'selected':''}>${y}</option>`).join('')}</select><button class="btn btn-sm" onclick="lvSummaryCsv()">Export CSV</button></div></div>`;
   if(fromTs)h+=`<div class="lv-sum-ts" style="font-size:11px;color:var(--dkgrey);margin-bottom:8px">From timesheets: ${year} predates the leave tracker (it starts in ${LEAVE_BASE_YEAR}), so these days are read from the leave boxes on the timesheets (hours divided by the person's daily hours). There is no entitlement or balance for this year.</div>`;
-  h+=`<div class="tbl-freeze"><table class="rtable"><thead><tr><th>Person</th>${fromTs?'':'<th>Entitlement</th><th>Carried</th>'}${LV_MONTHS.map(m=>`<th style="text-align:right">${m}</th>`).join('')}<th style="text-align:right" title="Annual leave taken">AL taken</th>${fromTs?'':'<th style="text-align:right" title="Annual leave awaiting approval">Pending</th><th style="text-align:right">Remaining</th>'}${cols.map(t=>`<th style="text-align:right" title="${escAttr(t)}">${escAttr(code(t))}</th>`).join('')}${fromTs?'':'<th>Note</th><th></th>'}</tr></thead><tbody>`;
+  h+=`<div class="tbl-freeze"><table class="rtable lv-sum-tbl"><thead>
+    <tr><th rowspan="3" style="vertical-align:bottom">Person</th><th colspan="${nAL}" class="lv-grp-al" style="background:${AL};color:var(--blk);text-align:center;${sepL}">Annual leave (days)</th>${cols.length?`<th colspan="${cols.length}" class="lv-grp-oth" style="background:#E4E8ED;color:var(--blk);text-align:center;${sepL}">Other leave: total days in ${year}</th>`:''}${fromTs?'':`<th rowspan="3" style="vertical-align:bottom;${sepL}">Note</th><th rowspan="3"></th>`}</tr>
+    <tr>${fromTs?'':`<th rowspan="2" style="vertical-align:bottom;${alBg};${sepL}">Entitlement</th><th rowspan="2" style="vertical-align:bottom;${alBg}">Carried</th><th rowspan="2" style="vertical-align:bottom;${alBg}">Total AL</th>`}<th colspan="12" style="text-align:center;background:#FBE3DD${fromTs?';'+sepL:''}">Taken by month</th><th rowspan="2" style="vertical-align:bottom;text-align:right;${alBg}">Taken</th>${fromTs?'':`<th rowspan="2" style="vertical-align:bottom;text-align:right;${alBg}">Pending</th><th rowspan="2" style="vertical-align:bottom;text-align:right;${alBg}">Remaining</th>`}${cols.map((t,ci)=>{const m=meta(t);return`<th rowspan="2" title="${escAttr(t)}" style="vertical-align:bottom;text-align:center;background:${m.color};color:${m.dark?'#fff':'var(--blk)'}${ci===0?';'+sepL:''}">${escAttr(m.code)}</th>`;}).join('')}</tr>
+    <tr>${LV_MONTHS.map(m=>`<th style="text-align:right;background:#FBE3DD">${m}</th>`).join('')}</tr>
+  </thead><tbody>`;
   for(const r of rows){
     const p=r.person,u=st.users.find(x=>x.name===p)||{};
-    h+=`<tr${p===me?' style="background:var(--off)"':''}><td style="font-weight:600;white-space:nowrap">${escAttr(p)}${p===me?' <span class="badge">You</span>':''}${u.selfApproveLeave?' <span class="badge" title="Can approve their own leave">self-approve</span>':''}${u.deactivated?' <span class="badge">left</span>':''}</td>`;
-    if(!fromTs)h+=`<td>${r.allow}</td><td>${r.carry}</td>`;
-    h+=r.months.map(m=>`<td style="text-align:right">${n(m)}</td>`).join('');
-    h+=`<td style="text-align:right;font-weight:600">${n(r.taken)}</td>`;
-    if(!fromTs)h+=`<td style="text-align:right">${n(r.pending)}</td><td class="lv-rem" style="text-align:right;font-weight:700;color:${r.remaining<0?'var(--danger)':'inherit'}">${+r.remaining.toFixed(2)}</td>`;
-    h+=cols.map(t=>`<td style="text-align:right">${n(r.types[t])}</td>`).join('');
-    if(!fromTs)h+=`<td style="font-size:11px;color:var(--dkgrey);min-width:240px;max-width:320px">${escAttr(st.leaveYearNotes[p+'||'+year]||'')}</td><td><button class="btn btn-sm" onclick="openLeaveMemberEdit('${jsq(p)}')">Edit</button></td>`;
+    h+=`<tr${p===me?' class="lv-sum-me"':''}><td style="font-weight:600;white-space:nowrap">${escAttr(p)}${p===me?' <span class="badge">You</span>':''}${u.selfApproveLeave?' <span class="badge" title="Can approve their own leave">self-approve</span>':''}${u.deactivated?' <span class="badge">left</span>':''}</td>`;
+    if(!fromTs)h+=`<td style="${alBg};${sepL}">${r.allow}</td><td style="${alBg}">${r.carry}</td><td style="${alBg};font-weight:600">${+(r.allow+r.carry).toFixed(2)}</td>`;
+    h+=r.months.map((m,mi)=>`<td style="text-align:right;${alBg}${fromTs&&mi===0?';'+sepL:''}"${clk(p,'Annual leave',mi,0,m)}>${n(m)}</td>`).join('');
+    h+=`<td style="text-align:right;font-weight:600;${alBg}"${clk(p,'Annual leave',-1,0,r.taken)}>${n(r.taken)}</td>`;
+    if(!fromTs){
+      const neg=r.remaining<0;
+      h+=`<td style="text-align:right;${alBg}"${clk(p,'Annual leave',-1,1,r.pending)}>${n(r.pending)}</td><td class="lv-rem ${neg?'lv-rem-neg':'lv-rem-pos'}" style="text-align:right;font-weight:700">${+r.remaining.toFixed(2)}</td>`;
+    }
+    h+=cols.map((t,ci)=>{const v=r.types[t];const m=meta(t);return`<td style="text-align:right;${v?`background:${m.color}55;`:''}${ci===0?sepL:''}"${clk(p,t,-1,0,v)}>${n(v)}</td>`;}).join('');
+    if(!fromTs)h+=`<td style="font-size:11px;color:var(--dkgrey);min-width:240px;max-width:320px;${sepL}">${escAttr(st.leaveYearNotes[p+'||'+year]||'')}</td><td><button class="btn btn-sm" onclick="openLeaveMemberEdit('${jsq(p)}')">Edit</button></td>`;
     h+=`</tr>`;
+    const D=lvSumDet;
+    if(D&&D.person===p&&D.year===year){
+      const list=lvSumDates(p,year,D.type,D.month,D.pending);
+      const what=`${D.pending?'Pending ':''}${D.type}${D.month>=0?' in '+LV_MONTHS[D.month]:''}`;
+      const dh=dailyHours(p);const tot=+list.reduce((a,x)=>a+(x.hours!=null?x.hours/dh:x.half?0.5:1),0).toFixed(2);
+      const m=meta(D.type);
+      const chip=x=>{const d=parseISO(x.iso);const lab=d.toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short'});return`<span class="lv-sum-chip" style="border-color:${m.color};background:${m.color}33"${x.note?` title="${escAttr(x.note)}"`:''}>${lab}${x.hours!=null?` · ${x.hours}h`:x.half?' · half day':''}</span>`;};
+      h+=`<tr class="lv-sum-det"><td colspan="${nCols}" style="background:var(--off);white-space:normal"><div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start"><div><div style="font-size:11px;font-weight:700;margin-bottom:6px">${escAttr(p)}: ${escAttr(what)}, ${year} (${tot} ${tot===1?'day':'days'}${fromTs?', from timesheets':''})</div><div style="display:flex;flex-wrap:wrap;gap:5px">${list.map(chip).join('')||'<span style="font-size:11px;color:var(--grey)">No dates.</span>'}</div></div><button class="btn btn-sm" onclick="lvSumDet=null;render()">Close</button></div></td></tr>`;
+    }
   }
-  h+=`</tbody><tfoot><tr style="font-weight:700"><td>Total</td>${fromTs?'':`<td>${n(sum(r=>r.allow))}</td><td>${n(sum(r=>r.carry))}</td>`}${LV_MONTHS.map((m,i)=>`<td style="text-align:right">${n(sum(r=>r.months[i]))}</td>`).join('')}<td style="text-align:right">${n(sum(r=>r.taken))}</td>${fromTs?'':`<td style="text-align:right">${n(sum(r=>r.pending))}</td><td style="text-align:right">${+sum(r=>r.remaining).toFixed(2)}</td>`}${cols.map(t=>`<td style="text-align:right">${n(sum(r=>r.types[t]))}</td>`).join('')}${fromTs?'':'<td></td><td></td>'}</tr></tfoot></table></div>`;
-  h+=`<div style="font-size:10px;color:var(--grey);margin-top:8px">Days, counting half days as 0.5. Months and AL taken are annual leave; the coded columns are the other leave types (hover a code for its name).${fromTs?'':' Taken and remaining count approved leave only; pending is shown separately. Allowance defaults to 25 days pro-rata to weekly hours and start date; auto carry-over is capped at 5 days. Click Edit to adjust a person\'s figures, start date, self-approval or year note.'}</div></div>`;
+  h+=`</tbody><tfoot><tr style="font-weight:700"><td>Total</td>${fromTs?'':`<td style="${alBg};${sepL}">${n(sum(r=>r.allow))}</td><td style="${alBg}">${n(sum(r=>r.carry))}</td><td style="${alBg}">${n(sum(r=>r.allow+r.carry))}</td>`}${LV_MONTHS.map((m,i)=>`<td style="text-align:right;${alBg}${fromTs&&i===0?';'+sepL:''}">${n(sum(r=>r.months[i]))}</td>`).join('')}<td style="text-align:right;${alBg}">${n(sum(r=>r.taken))}</td>${fromTs?'':`<td style="text-align:right;${alBg}">${n(sum(r=>r.pending))}</td><td style="text-align:right;${alBg}">${+sum(r=>r.remaining).toFixed(2)}</td>`}${cols.map((t,ci)=>`<td style="text-align:right${ci===0?';'+sepL:''}">${n(sum(r=>r.types[t]))}</td>`).join('')}${fromTs?'':`<td style="${sepL}"></td><td></td>`}</tr></tfoot></table></div>`;
+  h+=`<div class="lv-sum-key" style="display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;margin-top:10px;font-size:11px">
+    <span style="font-weight:700;color:var(--dkgrey)">Key</span>
+    <span><span class="lv-key-sw" style="background:${AL}">AL</span> Annual leave</span>
+    ${cols.map(t=>{const m=meta(t);return`<span><span class="lv-key-sw" style="background:${m.color};color:${m.dark?'#fff':'var(--blk)'}">${escAttr(m.code)}</span> ${escAttr(t)}</span>`;}).join('')}
+    ${fromTs?'':`<span><span class="lv-key-sw lv-rem-pos">0.5</span> leave left</span><span><span class="lv-key-sw lv-rem-neg">-1</span> overdrawn</span>`}
+  </div>
+  <div style="font-size:10px;color:var(--grey);margin-top:8px">Days, with half days as 0.5. Annual leave is split by month; the other leave types are totals for the whole year. Click any number to see the dates behind it.${fromTs?'':' Taken and remaining count approved leave only; pending is shown separately. Total AL is entitlement plus carried over. Allowance defaults to 25 days pro rata to weekly hours and start date; auto carry over is capped at 5 days. Click Edit to adjust a person\'s figures, start date, self approval or year note.'}</div></div>`;
   return h;
 }
 window.lvSummaryCsv=function(){
@@ -10209,12 +10286,13 @@ const HELP_TEXT={
   leave:{title:'How leave works',body:`
     <p><b>Request:</b> pick a type and your dates (weekends and bank holidays don't count — they're already off), tick any half days, and submit. Requests go to a director, who decides them (a director's own requests are booked straight away if self-approval is switched on for them, otherwise another director decides them). You can also start a request on your timesheet (past weeks included) by choosing <b>Full</b> or <b>Half</b> for a day on a leave row, or by clicking a day on your forecast leave row. Leave is always a full or half day; hours can't be typed, and leave is never copied from last week. A week waiting on a leave decision shows as awaiting approval rather than overdue.</p>
     <p><b>On approval</b> the days book onto your timesheet at your normal daily hours, show on the forecast and calendar, and — for Annual leave only — come off your allowance. If any day falls in a week already submitted, that timesheet reopens automatically with a notice to resubmit, so the calendar, forecast and timesheets always agree. Unpaid and other leave types are recorded but never touch the allowance; unpaid leave has no cap and is discretionary. A week with a pending leave request can't be submitted until it's decided.</p>
+    <p><b>Tidy page:</b> click a card's title to fold it away; the portal remembers your choice on this computer.</p>
     <p><b>Privacy:</b> everyone can see who's off and when, shown as <i>Away</i>; the <i>type</i> of leave and any note are visible only to you and directors. For sickness, no medical details are needed.</p>
     <p><b>Bank holidays</b> fill themselves in as a full day. Clear one only if you worked it; they can't be added on other days.</p>
     <p><b>School holidays:</b> the orange bar along the top of the team calendar marks typical England school holidays (approximate — councils vary), to help plan family leave around them.</p>
     <p><b>Allowance:</b> 25 days a year pro-rata to your working week, editable per person. Up to 5 unused days carry over automatically and are usable until 31 December of the next year — directors can set the carried number directly (e.g. for TOIL).</p>
     <p><b>Recorded for you:</b> a director can log leave on your behalf (e.g. sickness) — you'll get a notice to check it's right.</p>
-    <p><b>Leave summary (directors):</b> the Leave page shows every person's year: entitlement, carried over, annual leave taken each month, pending, remaining (red when below zero) and days of every other leave type, with a year picker and a CSV export. Years before 2026 predate the tracker and are read from the timesheets, so they show days taken only.</p>`},
+    <p><b>Leave summary (directors):</b> near the top of the Leave page, every person's year. The salmon block is annual leave: entitlement, carried over, total, days taken each month, pending, and remaining (green when there is leave left, red when overdrawn). The coloured columns after it are the other leave types, as totals for the whole year, with a key underneath. Click any number to see the dates behind it. There is a year picker and a CSV export. Years before 2026 predate the tracker and are read from the timesheets, so they show days taken only.</p>`},
   import:{title:'How the data page works',body:`
     <p style="margin:0 0 8px"><b>Setup imports (retired).</b> The one-time imports that first populated the app — Harvest history, the CRM BD tracker, and leave &amp; CPD history — have been retired now the app is live, so they can't be re-run against the shared data by accident. Add time, leave and CPD from their own pages from here on.</p>
     <p style="margin:0 0 8px"><b>Backup and restore.</b> Live data sits in the shared cloud database with automatic nightly backups; the JSON download here is an extra portable copy you control. Take one occasionally and before any big change. Restoring replaces the current data entirely, so back up first.</p>
