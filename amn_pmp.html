@@ -171,8 +171,10 @@ input::placeholder,textarea::placeholder{color:var(--grey);opacity:.85}input[typ
 .card.lv-coll>.lv-head,.card.lv-coll>.card-title{margin-bottom:0!important}
 .lv-caret{display:inline-block;width:16px;color:var(--grey);font-size:11px}
 .lv-sum-tbl th{white-space:nowrap}
-.lv-sum-tbl td.lv-sum-click{cursor:pointer;text-decoration:underline dotted;text-underline-offset:3px}
-.lv-sum-tbl td.lv-sum-click:hover{outline:1px solid var(--accent);outline-offset:-1px}
+.lv-sum-tbl td[data-click]{cursor:pointer;text-decoration:underline dotted;text-underline-offset:3px}
+.lv-sum-tbl td[data-click]:hover{outline:1px solid var(--accent);outline-offset:-1px}
+.lv-sum-tbl th,.lv-sum-tbl td{border-right:1px solid rgba(38,34,30,.09)}
+.lv-sum-tbl th.lv-eq,.lv-sum-tbl td.lv-eq{width:84px;min-width:84px;max-width:84px;text-align:center!important;white-space:nowrap}
 .lv-sum-tbl tr.lv-sum-me>td:first-child{background:var(--off)}
 .lv-rem-pos{background:#DCEBD3!important;color:#2F5A1F!important}
 .lv-rem-neg{background:#F6D0CB!important;color:#A01F12!important}
@@ -836,7 +838,7 @@ const STORE_KEY='amn_tracker_v1';
 // The newest build anyone opens records its number in the shared state
 // (st.meta.appBuild); a copy whose APP_BUILD is lower shows a "reopen from
 // your bookmark" banner. APP_VERSION_LABEL is the human-facing date, display only.
-const APP_BUILD=62;
+const APP_BUILD=63;
 const APP_VERSION_LABEL='22 Oct 2026';
 // The portal's one door since the SharePoint copy was retired (Joe, 5 Sep 2026).
 // Both the stale-copy banner and the sidebar tooltip read from these, so the
@@ -2530,7 +2532,7 @@ function buildLeaveSummaryCard(me){
   const n=x=>x?String(+(+x).toFixed(2)):'·';
   const meta=t=>LEAVE_TYPE_META[t]||{code:t,color:'#C9C3BA',dark:false};
   const sum=f=>rows.reduce((a,r)=>a+(f(r)||0),0);
-  const clk=(p,t,m,pend,v)=>v?` class="lv-sum-click" title="Show the dates" onclick="lvSumShow('${jsq(p)}','${jsq(t)}',${m},${pend?1:0})"`:'';
+  const clk=(p,t,m,pend,v)=>v?` data-click="1" title="Show the dates" onclick="lvSumShow('${jsq(p)}','${jsq(t)}',${m},${pend?1:0})"`:'';
   const nAL=(fromTs?0:3)+12+1+(fromTs?0:2);
   const nCols=1+nAL+cols.length+(fromTs?0:2);
   const alBg='background:#FDF1EE';
@@ -2540,18 +2542,18 @@ function buildLeaveSummaryCard(me){
   if(fromTs)h+=`<div class="lv-sum-ts" style="font-size:11px;color:var(--dkgrey);margin-bottom:8px">From timesheets: ${year} predates the leave tracker (it starts in ${LEAVE_BASE_YEAR}), so these days are read from the leave boxes on the timesheets (hours divided by the person's daily hours). There is no entitlement or balance for this year.</div>`;
   h+=`<div class="tbl-freeze"><table class="rtable lv-sum-tbl"><thead>
     <tr><th rowspan="3" style="vertical-align:bottom">Person</th><th colspan="${nAL}" class="lv-grp-al" style="background:${AL};color:var(--blk);text-align:center;${sepL}">Annual leave (days)</th>${cols.length?`<th colspan="${cols.length}" class="lv-grp-oth" style="background:#E4E8ED;color:var(--blk);text-align:center;${sepL}">Other leave: total days in ${year}</th>`:''}${fromTs?'':`<th rowspan="3" style="vertical-align:bottom;${sepL}">Note</th><th rowspan="3"></th>`}</tr>
-    <tr>${fromTs?'':`<th rowspan="2" style="vertical-align:bottom;${alBg};${sepL}">Entitlement</th><th rowspan="2" style="vertical-align:bottom;${alBg}">Carried</th><th rowspan="2" style="vertical-align:bottom;${alBg}">Total AL</th>`}<th colspan="12" style="text-align:center;background:#FBE3DD${fromTs?';'+sepL:''}">Taken by month</th><th rowspan="2" style="vertical-align:bottom;text-align:right;${alBg}">Taken</th>${fromTs?'':`<th rowspan="2" style="vertical-align:bottom;text-align:right;${alBg}">Pending</th><th rowspan="2" style="vertical-align:bottom;text-align:right;${alBg}">Remaining</th>`}${cols.map((t,ci)=>{const m=meta(t);return`<th rowspan="2" title="${escAttr(t)}" style="vertical-align:bottom;text-align:center;background:${m.color};color:${m.dark?'#fff':'var(--blk)'}${ci===0?';'+sepL:''}">${escAttr(m.code)}</th>`;}).join('')}</tr>
+    <tr>${fromTs?'':`<th rowspan="2" class="lv-eq" style="vertical-align:bottom;${alBg};${sepL}">Entitlement</th><th rowspan="2" class="lv-eq" style="vertical-align:bottom;${alBg}">Carried</th><th rowspan="2" class="lv-eq" style="vertical-align:bottom;${alBg}">Total AL</th>`}<th colspan="12" style="text-align:center;background:#FBE3DD${fromTs?';'+sepL:''}">Taken by month</th><th rowspan="2" class="lv-eq" style="vertical-align:bottom;${alBg}">Taken</th>${fromTs?'':`<th rowspan="2" class="lv-eq" style="vertical-align:bottom;${alBg}">Pending</th><th rowspan="2" class="lv-eq" style="vertical-align:bottom;${alBg}">Remaining</th>`}${cols.map((t,ci)=>{const m=meta(t);return`<th rowspan="2" title="${escAttr(t)}" style="vertical-align:bottom;text-align:center;background:${m.color};color:${m.dark?'#fff':'var(--blk)'}${ci===0?';'+sepL:''}">${escAttr(m.code)}</th>`;}).join('')}</tr>
     <tr>${LV_MONTHS.map(m=>`<th style="text-align:right;background:#FBE3DD">${m}</th>`).join('')}</tr>
   </thead><tbody>`;
   for(const r of rows){
     const p=r.person,u=st.users.find(x=>x.name===p)||{};
     h+=`<tr${p===me?' class="lv-sum-me"':''}><td style="font-weight:600;white-space:nowrap">${escAttr(p)}${p===me?' <span class="badge">You</span>':''}${u.selfApproveLeave?' <span class="badge" title="Can approve their own leave">self-approve</span>':''}${u.deactivated?' <span class="badge">left</span>':''}</td>`;
-    if(!fromTs)h+=`<td style="${alBg};${sepL}">${r.allow}</td><td style="${alBg}">${r.carry}</td><td style="${alBg};font-weight:600">${+(r.allow+r.carry).toFixed(2)}</td>`;
-    h+=r.months.map((m,mi)=>`<td style="text-align:right;${alBg}${fromTs&&mi===0?';'+sepL:''}"${clk(p,'Annual leave',mi,0,m)}>${n(m)}</td>`).join('');
-    h+=`<td style="text-align:right;font-weight:600;${alBg}"${clk(p,'Annual leave',-1,0,r.taken)}>${n(r.taken)}</td>`;
+    if(!fromTs)h+=`<td class="lv-eq" style="${alBg};${sepL}">${r.allow}</td><td class="lv-eq" style="${alBg}">${r.carry}</td><td class="lv-eq" style="${alBg};font-weight:600">${+(r.allow+r.carry).toFixed(2)}</td>`;
+    h+=r.months.map((m,mi)=>`<td class="lv-mon" style="text-align:right;background:#FBE3DD${fromTs&&mi===0?';'+sepL:''}"${clk(p,'Annual leave',mi,0,m)}>${n(m)}</td>`).join('');
+    h+=`<td class="lv-eq" style="font-weight:600;${alBg}"${clk(p,'Annual leave',-1,0,r.taken)}>${n(r.taken)}</td>`;
     if(!fromTs){
       const neg=r.remaining<0;
-      h+=`<td style="text-align:right;${alBg}"${clk(p,'Annual leave',-1,1,r.pending)}>${n(r.pending)}</td><td class="lv-rem ${neg?'lv-rem-neg':'lv-rem-pos'}" style="text-align:right;font-weight:700">${+r.remaining.toFixed(2)}</td>`;
+      h+=`<td class="lv-eq" style="${alBg}"${clk(p,'Annual leave',-1,1,r.pending)}>${n(r.pending)}</td><td class="lv-eq lv-rem ${neg?'lv-rem-neg':'lv-rem-pos'}" style="font-weight:700">${+r.remaining.toFixed(2)}</td>`;
     }
     h+=cols.map((t,ci)=>{const v=r.types[t];const m=meta(t);return`<td style="text-align:right;${v?`background:${m.color}55;`:''}${ci===0?sepL:''}"${clk(p,t,-1,0,v)}>${n(v)}</td>`;}).join('');
     if(!fromTs)h+=`<td style="font-size:11px;color:var(--dkgrey);min-width:240px;max-width:320px;${sepL}">${escAttr(st.leaveYearNotes[p+'||'+year]||'')}</td><td><button class="btn btn-sm" onclick="openLeaveMemberEdit('${jsq(p)}')">Edit</button></td>`;
@@ -2566,7 +2568,7 @@ function buildLeaveSummaryCard(me){
       h+=`<tr class="lv-sum-det"><td colspan="${nCols}" style="background:var(--off);white-space:normal"><div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start"><div><div style="font-size:11px;font-weight:700;margin-bottom:6px">${escAttr(p)}: ${escAttr(what)}, ${year} (${tot} ${tot===1?'day':'days'}${fromTs?', from timesheets':''})</div><div style="display:flex;flex-wrap:wrap;gap:5px">${list.map(chip).join('')||'<span style="font-size:11px;color:var(--grey)">No dates.</span>'}</div></div><button class="btn btn-sm" onclick="lvSumDet=null;render()">Close</button></div></td></tr>`;
     }
   }
-  h+=`</tbody><tfoot><tr style="font-weight:700"><td>Total</td>${fromTs?'':`<td style="${alBg};${sepL}">${n(sum(r=>r.allow))}</td><td style="${alBg}">${n(sum(r=>r.carry))}</td><td style="${alBg}">${n(sum(r=>r.allow+r.carry))}</td>`}${LV_MONTHS.map((m,i)=>`<td style="text-align:right;${alBg}${fromTs&&i===0?';'+sepL:''}">${n(sum(r=>r.months[i]))}</td>`).join('')}<td style="text-align:right;${alBg}">${n(sum(r=>r.taken))}</td>${fromTs?'':`<td style="text-align:right;${alBg}">${n(sum(r=>r.pending))}</td><td style="text-align:right;${alBg}">${+sum(r=>r.remaining).toFixed(2)}</td>`}${cols.map((t,ci)=>`<td style="text-align:right${ci===0?';'+sepL:''}">${n(sum(r=>r.types[t]))}</td>`).join('')}${fromTs?'':`<td style="${sepL}"></td><td></td>`}</tr></tfoot></table></div>`;
+  h+=`</tbody></table></div>`;
   h+=`<div class="lv-sum-key" style="display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;margin-top:10px;font-size:11px">
     <span style="font-weight:700;color:var(--dkgrey)">Key</span>
     <span><span class="lv-key-sw" style="background:${AL}">AL</span> Annual leave</span>
