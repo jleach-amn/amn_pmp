@@ -836,7 +836,7 @@ const STORE_KEY='amn_tracker_v1';
 // The newest build anyone opens records its number in the shared state
 // (st.meta.appBuild); a copy whose APP_BUILD is lower shows a "reopen from
 // your bookmark" banner. APP_VERSION_LABEL is the human-facing date, display only.
-const APP_BUILD=60;
+const APP_BUILD=61;
 const APP_VERSION_LABEL='22 Oct 2026';
 // The portal's one door since the SharePoint copy was retired (Joe, 5 Sep 2026).
 // Both the stale-copy banner and the sidebar tooltip read from these, so the
@@ -8558,13 +8558,28 @@ window.doRestoreJSON=function(){
     `Replace EVERYTHING in this app with the backup “${escAttr(restoreFileData.name)}” (exported ${escAttr(String(restoreFileData.exportedAt).slice(0,10))})? All current data — timesheets, projects, clients, CPD, settings — is overwritten. This cannot be undone.`,
     'restore','doRestoreJSONConfirmed',[]);
 }
-window.doRestoreJSONConfirmed=function(){
+// Build 61: the restore used to call save() (which only schedules the shared
+// database write 1.5s later) and then reload at once, so the write never left
+// the browser and the reload brought the old data straight back (22 Oct). The
+// restore is now written to the shared database first, and the page only
+// reloads once that write has succeeded.
+window.doRestoreJSONConfirmed=async function(){
   if(!restoreFileData)return;
   const keep=restoreFileData.state;
   for(const k of Object.keys(st))delete st[k];
   Object.assign(st,keep);
   restoreFileData=null;
   save();
+  if(typeof sbSaveNow==='function'&&typeof SB_URL!=='undefined'){
+    undoToast('Restoring: saving the backup to the shared database…');
+    for(let i=0;i<100&&_sbSaving;i++)await new Promise(r=>setTimeout(r,100));
+    try{await sbSaveNow();_sbSaveError=false;}
+    catch(e){
+      console.error('Restore save failed:',e);_sbSaveError=true;updateSyncBadge('error');
+      undoToast('The restore could not be saved to the shared database ('+(e&&e.message||'unknown error')+'). Nothing has been reloaded; please try the restore again.');
+      render();return;
+    }
+  }
   // Reload so startup migrations run against the restored state (harness-safe).
   if(typeof location!=='undefined'&&location&&location.reload)location.reload();else render();
 }
