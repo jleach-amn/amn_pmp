@@ -836,7 +836,7 @@ const STORE_KEY='amn_tracker_v1';
 // The newest build anyone opens records its number in the shared state
 // (st.meta.appBuild); a copy whose APP_BUILD is lower shows a "reopen from
 // your bookmark" banner. APP_VERSION_LABEL is the human-facing date, display only.
-const APP_BUILD=61;
+const APP_BUILD=62;
 const APP_VERSION_LABEL='22 Oct 2026';
 // The portal's one door since the SharePoint copy was retired (Joe, 5 Sep 2026).
 // Both the stale-copy banner and the sidebar tooltip read from these, so the
@@ -9032,7 +9032,7 @@ function buildReports(){
 }
 
 // ── Event handlers ────────────────────────────────────────────────────────────
-window.tab=t=>{tsChgDraft=null;epLeave();projEditDraft={};st._tab=t;viewingUser=null;healthProj=null;editingProj=null;openActionMenu=null;expandedStage=null;editingSubmitted=new Set();activeNoteCell=null;st._projAddOpen=!!(st._projAddOpen&&fkScopeDirty('np'));save();render();}
+window.tab=t=>{tsChgDraft=null;teamViewPerson=null;epLeave();projEditDraft={};st._tab=t;viewingUser=null;healthProj=null;editingProj=null;openActionMenu=null;expandedStage=null;editingSubmitted=new Set();activeNoteCell=null;st._projAddOpen=!!(st._projAddOpen&&fkScopeDirty('np'));save();render();}
 window.cw=d=>{wkOff+=d;activeNoteCell=null;render();}
 window.goThisWeek=()=>{wkOff=0;activeNoteCell=null;render();}
 window.tsPickPerson=function(name){if(!isDirector()||!st.users.some(u=>u.name===name))return;viewingUser=name===cur().name?null:name;st._tab='log';activeNoteCell=null;render();}
