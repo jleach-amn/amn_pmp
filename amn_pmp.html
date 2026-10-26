@@ -591,6 +591,11 @@ input::placeholder,textarea::placeholder{color:var(--grey);opacity:.85}input[typ
 .plan-table.view-week th.plan-wkcol{width:74px}
 .plan-table.view-month th.plan-wkcol{width:60px}
 .plan-table th.plan-weekend-col{background:#EFEBE3;color:var(--blue-md)}
+.plan-table th.plan-we-open-col{background:var(--warn-bg);color:var(--warn);box-shadow:inset 0 -3px 0 var(--warn)}
+.plan-table th.plan-weekend-col[onclick]:hover{background:#E6DFD2}
+.plan-bar-day.plan-bar-we{background:repeating-linear-gradient(45deg,rgba(255,255,255,.38),rgba(255,255,255,.38) 3px,transparent 3px,transparent 6px)}
+.plan-cell.plan-weekend-cell.plan-we-open{background:repeating-linear-gradient(45deg,#FBF1E2,#FBF1E2 4px,#F3DFC2 4px,#F3DFC2 8px)}
+.plan-cell.plan-empty-cell.plan-we-open{background:#FBF1E2}
 .plan-table th.plan-bh-col{background:#F3E7C9;color:#8A6212;border-bottom-color:#DFA64F}
 .plan-cell.plan-bh-cell{background:repeating-linear-gradient(45deg,#FBF3E0,#FBF3E0 5px,#F2E3BE 5px,#F2E3BE 10px)}
 .plan-cell.plan-bh-cell.plan-weekend-cell{background:repeating-linear-gradient(45deg,#F6EDD6,#F6EDD6 4px,#E8D5A8 4px,#E8D5A8 8px)}
@@ -838,7 +843,7 @@ const STORE_KEY='amn_tracker_v1';
 // The newest build anyone opens records its number in the shared state
 // (st.meta.appBuild); a copy whose APP_BUILD is lower shows a "reopen from
 // your bookmark" banner. APP_VERSION_LABEL is the human-facing date, display only.
-const APP_BUILD=64;
+const APP_BUILD=65;
 const APP_VERSION_LABEL='26 Oct 2026';
 // The portal's one door since the SharePoint copy was retired (Joe, 5 Sep 2026).
 // Both the stale-copy banner and the sidebar tooltip read from these, so the
@@ -2679,18 +2684,60 @@ function planWkToDate(wk){const[yr,wn]=wk.split('-W').map(Number);const jan1=new
 
 // An entry may cover chosen weekdays only (a.days: 0=Mon..4=Fri); none = all.
 function planDayOn(a,d){return !Array.isArray(a.days)||!a.days.length||a.days.includes((d.getDay()+6)%7);}
+// Weekend overtime on the forecast. Weekends are closed by default. A planner can
+// switch an individual Saturday or Sunday on (click its column heading); that only
+// opens the day. An entry carries time on it only if the day is listed in the
+// entry's own `we` list, which is set when the entry is drawn, extended over, or
+// ticked in its window. So switching a day on never adds hours to existing bars.
+// The switches live in meta (one key per day) so they sync like everything else.
+const PLAN_WE_PREFIX='planWE_';
+function planWeOnISO(iso){const d=parseISO(iso);return isWeekendDate(d)&&!!st.meta[PLAN_WE_PREFIX+iso];}
+function planWeOn(d){return isWeekendDate(d)&&!!st.meta[PLAN_WE_PREFIX+isoDate(d)];}
+function addDaysISO(iso,n){return isoDate(addDays(parseISO(iso),n));}
+function planWeInRange(s,e){const out=[];let d=parseISO(s);const end=parseISO(e);while(d<=end){if(planWeOn(d))out.push(isoDate(d));d=addDays(d,1);}return out;}
+function planAsgDayOpen(a,d){
+  if(isWeekendDate(d))return !!(a.we&&a.we.includes(isoDate(d)));
+  return !isClosedDate(d)&&planDayOn(a,d);
+}
+function planWeHasTime(iso){return st.planAssignments.some(a=>a.we&&a.we.includes(iso));}
+window.planWeToggle=function(iso){
+  if(!planEditor())return;
+  const k=PLAN_WE_PREFIX+iso;
+  if(st.meta[k]){
+    if(planWeHasTime(iso)){undoToast('There is forecast time on this day. Clear it first, then switch the day off.');return;}
+    delete st.meta[k];
+  }else st.meta[k]=1;
+  save();render();
+}
+// When an entry moves or is resized, work out its weekend days afterwards.
+// Move: each day shifts with the bar and is kept only if it lands on a day that is
+// switched on. Resize: days still inside stay; switched-on weekend days in the part
+// newly covered are added; days cut off are dropped.
+function planWeAfterChange(we,oldS,oldE,newS,newE){
+  const list=Array.isArray(we)?we.slice():[];
+  const dS=Math.round((parseISO(newS)-parseISO(oldS))/864e5),dE=Math.round((parseISO(newE)-parseISO(oldE))/864e5);
+  let out;
+  if(dS!==0&&dS===dE){out=list.map(x=>addDaysISO(x,dS)).filter(planWeOnISO);}
+  else{
+    out=list.filter(x=>x>=newS&&x<=newE);
+    if(newS<oldS)out=out.concat(planWeInRange(newS,addDaysISO(oldS,-1)));
+    if(newE>oldE)out=out.concat(planWeInRange(addDaysISO(oldE,1),newE));
+  }
+  return [...new Set(out)].sort();
+}
 function applyPlanAssignment(a){
   let d=parseISO(a.startDate);const end=parseISO(a.endDate);
-  while(d<=end){if(!isClosedDate(d)&&planDayOn(a,d)){const{wk,dayIdx}=dateToWkDay(d);sFRaw(wk,a.project,a.stage,a.person,dayIdx,a.hrsPerDay);}d=addDays(d,1);}
+  while(d<=end){if(planAsgDayOpen(a,d)){const{wk,dayIdx}=dateToWkDay(d);sFRaw(wk,a.project,a.stage,a.person,dayIdx,a.hrsPerDay);}d=addDays(d,1);}
 }
 function clearPlanAssignmentRange(a){
   let d=parseISO(a.startDate);const end=parseISO(a.endDate);
-  while(d<=end){if(!isClosedDate(d)){const{wk,dayIdx}=dateToWkDay(d);sFRaw(wk,a.project,a.stage,a.person,dayIdx,0);}d=addDays(d,1);}
+  while(d<=end){if(!isClosedDate(d)||(isWeekendDate(d)&&a.we&&a.we.includes(isoDate(d)))){const{wk,dayIdx}=dateToWkDay(d);sFRaw(wk,a.project,a.stage,a.person,dayIdx,0);}d=addDays(d,1);}
 }
-function addPlanAssignment(project,stage,person,startDate,endDate,hrsPerDay,notes,days){
+function addPlanAssignment(project,stage,person,startDate,endDate,hrsPerDay,notes,days,we){
   const id='pa'+Date.now()+Math.floor(Math.random()*10000);
   const a={id,project,stage,person,startDate,endDate,hrsPerDay,notes:notes||'',updatedAt:new Date().toISOString(),updatedBy:cur()?.name||''};
   if(Array.isArray(days)&&days.length&&days.length<5)a.days=days.slice().sort();
+  if(Array.isArray(we)){const w=we.filter(x=>x>=startDate&&x<=endDate&&planWeOnISO(x));if(w.length)a.we=[...new Set(w)].sort();}
   st.planAssignments.push(a);applyPlanAssignment(a);save();
   // Heads-up (never a block): count the entry's open days that land on this
   // person's approved/pending leave, so a deadline booking can't hide a holiday.
@@ -2726,7 +2773,12 @@ function removePlanRow(project,stage,person){
 // ── Calendar columns for the planner grid, generalised across day/week/month views ──
 // One place that decides a cell's column-level classes, so bank-holiday shading
 // runs the full height of the table rather than appearing only in the header.
-function planColCls(c){return `${c.isToday?' plan-today-cell':''}${c.isWeekend?' plan-weekend-cell':''}${c.isBH?' plan-bh-cell':''}${(!c.isBH&&c.bhCount)?' plan-bhweek-cell':''}`;}
+function planWeHeadAttrs(c){
+  if(planView!=='day'||!c.isWeekend||c.isBH||!planEditor())return'';
+  const iso=c.key;
+  return ` style="cursor:pointer" onclick="planWeToggle('${iso}')" title="${c.weOpen?'Overtime is switched on for this day. Click to switch it off.':'Weekends are closed. Click to switch this day on for overtime.'}"`;
+}
+function planColCls(c){return `${c.isToday?' plan-today-cell':''}${c.isWeekend?' plan-weekend-cell':''}${c.weOpen?' plan-we-open':''}${c.isBH?' plan-bh-cell':''}${(!c.isBH&&c.bhCount)?' plan-bhweek-cell':''}`;}
 function planColumnsFor(view,offsetDays){
   const today=new Date();today.setHours(0,0,0,0);
   const cols=[];
@@ -2734,7 +2786,7 @@ function planColumnsFor(view,offsetDays){
     const start=addDays(startOfWeek(today),offsetDays);
     for(let i=0;i<21;i++){
       const d=addDays(start,i);const wknd=isWeekendDate(d);const bh=UK_BH.has(isoDate(d));const closed=wknd||bh;
-      cols.push({key:isoDate(d),start:d,end:d,days:1,label:d.toLocaleDateString('en-GB',{weekday:'short'}),subLabel:d.toLocaleDateString('en-GB',{day:'numeric',month:'short'}),isWeekend:closed,isBH:bh,isToday:isoDate(d)===isoDate(today),assignStart:closed?null:d,assignEnd:closed?null:d,msStart:d,msEnd:d});
+      cols.push({key:isoDate(d),start:d,end:d,days:1,label:d.toLocaleDateString('en-GB',{weekday:'short'}),subLabel:d.toLocaleDateString('en-GB',{day:'numeric',month:'short'}),isWeekend:closed,weOpen:wknd&&!bh&&planWeOn(d),isBH:bh,isToday:isoDate(d)===isoDate(today),assignStart:closed?null:d,assignEnd:closed?null:d,msStart:d,msEnd:d});
     }
   } else if(view==='month'){
     const anchor=startOfMonth(addDays(today,offsetDays));
@@ -2757,7 +2809,7 @@ function overlapWeekdayCount(col,a){
   const s=(parseISO(a.startDate)>col.start)?parseISO(a.startDate):col.start;
   const e=(parseISO(a.endDate)<col.end)?parseISO(a.endDate):col.end;
   if(s>e)return 0;
-  let n=0,d=new Date(s);while(d<=e){if(!isClosedDate(d)&&planDayOn(a,d))n++;d=addDays(d,1);}return n;
+  let n=0,d=new Date(s);while(d<=e){if(planAsgDayOpen(a,d))n++;d=addDays(d,1);}return n;
 }
 function planStageColHrs(proj,stageName,col){let t=0;for(const a of st.planAssignments)if(a.project===proj.name&&a.stage===stageName)t+=(a.hrsPerDay||0)*overlapWeekdayCount(col,a);return t;}
 
@@ -2778,6 +2830,7 @@ function personCapacityInCol(person,col){
 function personUtilStatus(person,col){
   const capacity=personCapacityInCol(person,col);
   const allocated=personProjHrsInCol(person,col)+personLeaveNBHrsInCol(person,col);
+  if(capacity<=0&&allocated>0&&col.days===1&&isWeekendDate(col.start))return{status:'over',label:`${allocated.toFixed(1)}h OT`};
   if(capacity<=0||allocated<=0)return null;
   const diff=allocated-capacity;
   if(Math.abs(diff)<0.05)return{status:'full',label:'Full'};
@@ -2953,13 +3006,20 @@ function commitDescRange(desc,newStart,newEnd,newHrs){
     setStageDates(p,ph,newStart,newEnd,moved?Math.round((parseISO(newStart)-parseISO(desc.startDate))/864e5):0);save();return;
   }
   const hrs=newHrs!=null?newHrs:desc.hrsPerDay;
-  if(desc.kind==='proj'){updatePlanAssignment(desc.id,{startDate:newStart,endDate:newEnd,hrsPerDay:hrs});return;}
+  if(desc.kind==='proj'){
+    const a0=st.planAssignments.find(x=>x.id===desc.id);
+    const had=a0&&Array.isArray(a0.we)?a0.we.length:0;
+    const we=planWeAfterChange(a0&&a0.we,desc.startDate,desc.endDate,newStart,newEnd);
+    const moved=newStart!==desc.startDate&&newEnd!==desc.endDate;
+    if(moved&&had&&we.length<had)undoToast(`${had-we.length} weekend day${had-we.length===1?'':'s'} not carried over, because the new weekend is not switched on.`);
+    updatePlanAssignment(desc.id,{startDate:newStart,endDate:newEnd,hrsPerDay:hrs,we:we.length?we:undefined});return;
+  }
   if(desc.kind==='leave'){_lvSwallowClick=true;editLeaveDates(desc.person,desc.startDate,newStart,newEnd);return;}
   clearRawRange(desc.kind,desc.person,desc.type,desc.startDate,desc.endDate);
   writeRawRange(desc.kind,desc.person,desc.type,newStart,newEnd,hrs);
 }
 function commitDescCreate(kind,identity,startDate,endDate,hrsPerDay,notes){
-  if(kind==='proj')return addPlanAssignment(identity.project,identity.stage,identity.person,startDate,endDate,hrsPerDay,notes,identity.days);
+  if(kind==='proj')return addPlanAssignment(identity.project,identity.stage,identity.person,startDate,endDate,hrsPerDay,notes,identity.days,identity.we);
   if(kind==='leave'&&identity.type!=='Bank Holiday'){
     // Leave entered from the forecast becomes a request: pending for yourself
     // (unless self-approve), booked + noticed when an admin enters it for someone else.
@@ -4672,7 +4732,7 @@ function buildForecast(){
   h+=`<div class="card"><div class="plan-scroll"><table class="plan-table view-${planView}">
   <colgroup><col class="plan-numcol"><col style="width:230px">${cols.map(()=>`<col style="width:${planView==='day'?38:74}px">`).join('')}</colgroup>
   <thead><tr><th class="plan-rowhead plan-numcol"></th><th class="plan-rowhead"></th>
-    ${cols.map(c=>`<th class="plan-wkcol ${c.isToday?'plan-now':''}${c.isWeekend?' plan-weekend-col':''}${c.isBH?' plan-bh-col':''}${(!c.isBH&&c.bhCount)?' plan-bhweek-col':''}" data-key="${c.key}" data-days="${c.days}">${c.label}${c.isBH?' <span class="bh-badge" title="UK bank holiday — office closed">BH</span>':c.bhCount?` <span class="bh-badge" title="${c.bhCount} UK bank holiday${c.bhCount>1?'s':''} this week — office closed">${c.bhCount>1?c.bhCount+'×':''}BH</span>`:''}${c.subLabel?`<br><span style="font-weight:500;font-size:9px;color:var(--grey)">${c.subLabel}</span>`:''}</th>`).join('')}
+    ${cols.map(c=>`<th class="plan-wkcol ${c.isToday?'plan-now':''}${c.isWeekend?' plan-weekend-col':''}${c.weOpen?' plan-we-open-col':''}${c.isBH?' plan-bh-col':''}${(!c.isBH&&c.bhCount)?' plan-bhweek-col':''}" data-key="${c.key}" data-days="${c.days}"${planWeHeadAttrs(c)}>${c.label}${c.isBH?' <span class="bh-badge" title="UK bank holiday — office closed">BH</span>':c.bhCount?` <span class="bh-badge" title="${c.bhCount} UK bank holiday${c.bhCount>1?'s':''} this week — office closed">${c.bhCount>1?c.bhCount+'×':''}BH</span>`:''}${c.subLabel?`<br><span style="font-weight:500;font-size:9px;color:var(--grey)">${c.subLabel}</span>`:''}</th>`).join('')}
   </tr></thead><tbody>`;
 
   h+=buildPlanSectionHeader('leave','Leave',cols,null,null);
@@ -4764,7 +4824,7 @@ window.projListCollapseAll=function(){projListExpanded.clear();render();}
 function buildTeamForecast(cols){
   let h=`<div class="card"><div class="plan-scroll"><table class="plan-table view-${planView}">
   <thead><tr><th class="plan-rowhead">Name</th>
-    ${cols.map(c=>`<th class="plan-wkcol ${c.isToday?'plan-now':''}${c.isWeekend?' plan-weekend-col':''}${c.isBH?' plan-bh-col':''}${(!c.isBH&&c.bhCount)?' plan-bhweek-col':''}">${c.label}${c.isBH?' <span class="bh-badge" title="UK bank holiday — office closed">BH</span>':c.bhCount?` <span class="bh-badge" title="${c.bhCount} UK bank holiday${c.bhCount>1?'s':''} this week — office closed">${c.bhCount>1?c.bhCount+'×':''}BH</span>`:''}${c.subLabel?`<br><span style="font-weight:500;font-size:9px;color:var(--grey)">${c.subLabel}</span>`:''}</th>`).join('')}
+    ${cols.map(c=>`<th class="plan-wkcol ${c.isToday?'plan-now':''}${c.isWeekend?' plan-weekend-col':''}${c.weOpen?' plan-we-open-col':''}${c.isBH?' plan-bh-col':''}${(!c.isBH&&c.bhCount)?' plan-bhweek-col':''}"${planWeHeadAttrs(c)}>${c.label}${c.isBH?' <span class="bh-badge" title="UK bank holiday — office closed">BH</span>':c.bhCount?` <span class="bh-badge" title="${c.bhCount} UK bank holiday${c.bhCount>1?'s':''} this week — office closed">${c.bhCount>1?c.bhCount+'×':''}BH</span>`:''}${c.subLabel?`<br><span style="font-weight:500;font-size:9px;color:var(--grey)">${c.subLabel}</span>`:''}</th>`).join('')}
   </tr></thead><tbody>`;
   const roster=[...st.users.map(u=>({...u,_ph:false})),...st.placeholders.map(p=>({...p,_ph:true}))];
   for(const person of roster)h+=buildTeamPersonRow(person,cols);
@@ -4807,8 +4867,9 @@ function buildTeamAddRow(personName,cols){
   let h=`<tr class="plan-stage-row"><td class="plan-rowhead plan-stage-cell" style="font-style:italic;font-weight:500;color:var(--dkgrey)">+ Add</td>`;
   for(const c of cols){
     const tc=leaveClashCls(_lvR,c.start,c.end,personName);
-    if(planView==='month'||!c.assignStart){h+=`<td class="plan-cell${planColCls(c)}${tc.cls}"${tc.title}></td>`;continue;}
-    h+=`<td class="plan-cell plan-empty-cell plan-ms-trigger${planColCls(c)}${tc.cls}"${tc.title} data-start="${isoDate(c.assignStart)}" data-end="${isoDate(c.assignEnd)}" onmousedown="planCreateStart(event,'choice-proj','','','${jsq(personName)}','${isoDate(c.assignStart)}','${isoDate(c.assignEnd)}')" onmouseenter="planCreateHover(event,'${isoDate(c.assignStart)}','${isoDate(c.assignEnd)}')"></td>`;
+    if(planView==='month'||(!c.assignStart&&!c.weOpen)){h+=`<td class="plan-cell${planColCls(c)}${tc.cls}"${tc.title}></td>`;continue;}
+    const _as=c.assignStart||c.start,_ae=c.assignEnd||c.end;
+    h+=`<td class="plan-cell plan-empty-cell plan-ms-trigger${planColCls(c)}${tc.cls}"${tc.title} data-start="${isoDate(_as)}" data-end="${isoDate(_ae)}" onmousedown="planCreateStart(event,'choice-proj','','','${jsq(personName)}','${isoDate(_as)}','${isoDate(_ae)}')" onmouseenter="planCreateHover(event,'${isoDate(_as)}','${isoDate(_ae)}')"></td>`;
   }
   h+=`</tr>`;
   return h;
@@ -4986,10 +5047,10 @@ ${edP?`<button class="plan-rm-person" title="Remove from forecast" onclick="even
     } else if(planView==='month'){
       h+=`<td class="plan-cell plan-agg plan-ms-trigger${planColCls(c)}" onclick="planOpenMilestones(event,'${jsq(proj.name)}',null,'${isoDate(c.start)}','${isoDate(c.end)}')">${body}</td>`;
     } else {
-      if(c.isWeekend){
+      if(c.isWeekend&&!c.weOpen){
         h+=`<td class="plan-cell plan-agg plan-weekend-cell plan-ms-trigger${planColCls(c)}" onclick="event.stopPropagation();openPlanMilestonesRange('${jsq(proj.name)}',null,'${isoDate(c.msStart||c.start)}','${isoDate(c.msEnd||c.end)}',event.clientX,event.clientY,null)">${body}</td>`;
       } else {
-        h+=`<td class="plan-cell plan-agg plan-empty-cell plan-ms-trigger" data-start="${isoDate(c.start)}" data-end="${isoDate(c.end)}" onmousedown="planCreateStart(event,'choice-proj','${jsq(proj.name)}','','','${isoDate(c.start)}','${isoDate(c.end)}')" onmouseenter="planCreateHover(event,'${isoDate(c.start)}','${isoDate(c.end)}')">${body}</td>`;
+        h+=`<td class="plan-cell plan-agg plan-empty-cell plan-ms-trigger${c.weOpen?' plan-we-open':''}" data-start="${isoDate(c.start)}" data-end="${isoDate(c.end)}" onmousedown="planCreateStart(event,'choice-proj','${jsq(proj.name)}','','','${isoDate(c.start)}','${isoDate(c.end)}')" onmouseenter="planCreateHover(event,'${isoDate(c.start)}','${isoDate(c.end)}')">${body}</td>`;
       }
     }
   }
@@ -5022,10 +5083,10 @@ function buildPlanStageBlock(proj,stage,cols){
     } else if(planView==='month'){
       h+=`<td class="plan-cell plan-ms-trigger${hrs>0?' plan-agg has-hrs':''}${planColCls(c)}" onclick="planOpenMilestones(event,'${jsq(proj.name)}','${jsq(stage.name)}','${isoDate(c.start)}','${isoDate(c.end)}')">${body}</td>`;
     } else {
-      if(c.isWeekend){
+      if(c.isWeekend&&!c.weOpen){
         h+=`<td class="plan-cell plan-weekend-cell plan-ms-trigger${hrs>0?' plan-agg has-hrs':''}" onclick="event.stopPropagation();openPlanMilestonesRange('${jsq(proj.name)}','${jsq(stage.name)}','${isoDate(c.msStart||c.start)}','${isoDate(c.msEnd||c.end)}',event.clientX,event.clientY,null)">${body}</td>`;
       } else {
-        h+=`<td class="plan-cell plan-empty-cell plan-ms-trigger${hrs>0?' plan-agg has-hrs':''}" data-start="${isoDate(c.start)}" data-end="${isoDate(c.end)}" onmousedown="planCreateStart(event,'choice-proj','${jsq(proj.name)}','${jsq(stage.name)}','','${isoDate(c.start)}','${isoDate(c.end)}')" onmouseenter="planCreateHover(event,'${isoDate(c.start)}','${isoDate(c.end)}')">${body}</td>`;
+        h+=`<td class="plan-cell plan-empty-cell plan-ms-trigger${hrs>0?' plan-agg has-hrs':''}${c.weOpen?' plan-we-open':''}" data-start="${isoDate(c.start)}" data-end="${isoDate(c.end)}" onmousedown="planCreateStart(event,'choice-proj','${jsq(proj.name)}','${jsq(stage.name)}','','${isoDate(c.start)}','${isoDate(c.end)}')" onmouseenter="planCreateHover(event,'${isoDate(c.start)}','${isoDate(c.end)}')">${body}</td>`;
       }
     }
   }
@@ -5117,7 +5178,7 @@ window.doRemoveStageRow=function(project,stage){
 }
 
 
-// A weekend cell allows milestones only (weekends never carry forecast time). Clicking
+// A closed weekend cell allows milestones only (a weekend takes forecast time only once switched on). Clicking
 // opens the milestone popover for that single day, scoped to the given project/person.
 function weekendMsCell(msProject,stage,person,c){
   const chips=renderMilestoneChips(milestonesInRange(msProject,stage,c.start,c.end,person));
@@ -5160,18 +5221,20 @@ function buildAssignmentRow(kind,identity,person,cols,rowLabel,indent,removable,
       // hatched cells, so the coloured bar visibly stops and restarts around weekends.
       // Resize handles appear only on the outer edges of the whole assignment.
       let j=i,firstSeg=true;
+      // A switched-on weekend day belongs to a project bar only if the bar lists it.
+      const offCol=cc=>cc.isWeekend&&!(kind==='proj'&&cc.weOpen&&Array.isArray(a.we)&&a.we.includes(cc.key));
       while(j<=end){
-        if(cols[j].isWeekend){
-          h+=`<td class="plan-cell plan-weekend-cell${cols[j].isToday?' plan-today-cell':''}"></td>`;
+        if(offCol(cols[j])){
+          h+=`<td class="plan-cell plan-weekend-cell${cols[j].weOpen?' plan-we-open':''}${cols[j].isToday?' plan-today-cell':''}"></td>`;
           j++;
         } else {
-          let k=j;while(k+1<=end&&!cols[k+1].isWeekend)k++;
+          let k=j;while(k+1<=end&&!offCol(cols[k+1]))k++;
           const segCols=cols.slice(j,k+1);
           const segClash=clashAt(segCols[0].start,segCols[segCols.length-1].end);
           const isOuterL=(j===i),isOuterR=(k===end);
           h+=`<td class="plan-cell plan-bar-cell${segClash.cls}"${segClash.title} colspan="${k-j+1}">
             <div class="plan-bar${kind!=='proj'?' plan-bar-'+kind:''}${a.pending?' plan-bar-pending':''}" ${a.pending?'data-pending="1"':''} ${a.closure?'data-closure="1"':''} ${kind==='leave'&&(isAdmin()||person===st.currentUser)?`onclick="lvBarClick('${jsq(person)}','${a.startDate}')"`:''} ${barData} ${(()=>{if(kind!=='proj')return'';const pp=st.projects.find(x=>x.name===identity.project);return pp&&pp.planColor?`style="background:${pp.planColor}"`:'';})()} ${edR?'onmousedown="planBarMouseDown(event)"':''}>
-              ${dayMode?`<div class="plan-bar-days">${segCols.map(sc=>`<span class="plan-bar-day${kind==='proj'&&Array.isArray(a.days)&&a.days.length&&!a.days.includes((sc.start.getDay()+6)%7)?' off':''}"></span>`).join('')}</div>`:''}
+              ${dayMode?`<div class="plan-bar-days">${segCols.map(sc=>`<span class="plan-bar-day${kind==='proj'&&Array.isArray(a.days)&&a.days.length&&!sc.isWeekend&&!a.days.includes((sc.start.getDay()+6)%7)?' off':''}${sc.weOpen?' plan-bar-we':''}"></span>`).join('')}</div>`:''}
               ${planView!=='month'&&isOuterL&&edR?`<span class="plan-bar-handle plan-bar-handle-l" onmousedown="planResizeStart(event,'l')"></span>`:''}
               ${firstSeg?`<span class="plan-bar-label">${escAttr(label)}</span>${hasNote?`<span class="plan-bar-note-dot" title="Has a note">•</span>`:''}`:''}
               ${planView!=='month'&&isOuterR&&edR?`<span class="plan-bar-handle plan-bar-handle-r" onmousedown="planResizeStart(event,'r')"></span>`:''}
@@ -5186,7 +5249,7 @@ function buildAssignmentRow(kind,identity,person,cols,rowLabel,indent,removable,
       const mc=clashAt(c.start,c.end);
       h+=`<td class="plan-cell${planColCls(c)}${mc.cls}"${mc.title}></td>`;
       i++;
-    } else if(!c.assignStart){
+    } else if(!c.assignStart&&!(kind==='proj'&&c.weOpen)){
       // Weekend cell on a Leave/NB row: milestones allowed, time is not.
       h+=(kind==='leave'||kind==='nb')&&edR?weekendMsCell(chosenProject,null,person,c):`<td class="plan-cell plan-weekend-cell${planColCls(c)}">${(kind==='leave'||kind==='nb')?bdayChip(person,c):''}</td>`;
       i++;
@@ -5194,7 +5257,8 @@ function buildAssignmentRow(kind,identity,person,cols,rowLabel,indent,removable,
       // Individual milestone chips for this person on their Leave/NB row.
       const msHere=(kind==='leave'||kind==='nb')?milestonesInRange(chosenProject,null,c.start,c.end,person):[];
       const ec=clashAt(c.start,c.end);
-      h+=edR?`<td class="plan-cell plan-empty-cell plan-ms-trigger${planColCls(c)}${ec.cls}"${ec.title} data-start="${isoDate(c.assignStart)}" data-end="${isoDate(c.assignEnd)}" onmousedown="planCreateStart(event,'choice-${kind}','${jsq(chosenProject)}','${jsq(chosenStage)}','${jsq(person)}','${isoDate(c.assignStart)}','${isoDate(c.assignEnd)}')" onmouseenter="planCreateHover(event,'${isoDate(c.assignStart)}','${isoDate(c.assignEnd)}')">${renderMilestoneChips(msHere)}${(kind==='leave'||kind==='nb')?bdayChip(person,c):''}</td>`:`<td class="plan-cell${planColCls(c)}${ec.cls}"${ec.title}>${renderMilestoneChips(msHere)}${(kind==='leave'||kind==='nb')?bdayChip(person,c):''}</td>`;
+      const _as=c.assignStart||c.start,_ae=c.assignEnd||c.end;
+      h+=edR?`<td class="plan-cell plan-empty-cell plan-ms-trigger${planColCls(c)}${ec.cls}"${ec.title} data-start="${isoDate(_as)}" data-end="${isoDate(_ae)}" onmousedown="planCreateStart(event,'choice-${kind}','${jsq(chosenProject)}','${jsq(chosenStage)}','${jsq(person)}','${isoDate(_as)}','${isoDate(_ae)}')" onmouseenter="planCreateHover(event,'${isoDate(_as)}','${isoDate(_ae)}')">${renderMilestoneChips(msHere)}${(kind==='leave'||kind==='nb')?bdayChip(person,c):''}</td>`:`<td class="plan-cell${planColCls(c)}${ec.cls}"${ec.title}>${renderMilestoneChips(msHere)}${(kind==='leave'||kind==='nb')?bdayChip(person,c):''}</td>`;
       i++;
     }
   }
@@ -5433,7 +5497,7 @@ function descFromBarEl(el){
 function enrichDesc(desc){
   if(desc.kind==='stage')return desc;
   const notes=getAssignmentNote(desc);
-  if(desc.kind==='proj'){const a=st.planAssignments.find(x=>x.id===desc.id);if(a)return{...desc,notes,days:a.days,updatedAt:a.updatedAt,updatedBy:a.updatedBy};}
+  if(desc.kind==='proj'){const a=st.planAssignments.find(x=>x.id===desc.id);if(a)return{...desc,notes,days:a.days,we:a.we,updatedAt:a.updatedAt,updatedBy:a.updatedBy};}
   return{...desc,notes};
 }
 // Leave bars may be dragged/resized only when the change can route through the
@@ -5538,13 +5602,27 @@ window.planToggleRepeat=function(){
   const cb=document.getElementById('plan-repeat-cb');
   if(wrap)wrap.style.display=cb.checked?'block':'none';
 }
+window.planWeRefresh=function(){
+  const wrap=document.getElementById('plan-we-wrap');const ps=planPopoverState;if(!wrap||!ps)return;
+  const sEl=document.getElementById('plan-start-input'),eEl=document.getElementById('plan-end-input');if(!sEl||!eEl)return;
+  const mem=ps._we||(ps._we={});
+  wrap.querySelectorAll('.plan-we-cb').forEach(cb=>{mem[cb.value]=cb.checked;});
+  const dates=(sEl.value&&eEl.value&&sEl.value<=eEl.value)?planWeInRange(sEl.value,eEl.value):[];
+  wrap.style.display=dates.length?'block':'none';
+  const list=wrap.querySelector('.plan-we-list');
+  list.innerHTML=dates.map(iso=>{const on=(iso in mem)?mem[iso]:ps.mode==='new';mem[iso]=on;
+    const lab=parseISO(iso).toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short'});
+    return `<label class="crm-chip" style="font-size:11px;padding:4px 9px"><input type="checkbox" class="plan-we-cb" value="${iso}" ${on?'checked':''} onchange="planRecalcTotal()" style="margin:0 5px 0 0"/>${lab}</label>`;}).join('');
+}
 window.planRecalcTotal=function(){
   const sEl=document.getElementById('plan-start-input'),eEl=document.getElementById('plan-end-input'),hEl=document.getElementById('plan-hrs-input'),totalEl=document.getElementById('plan-total-display');
   if(!sEl||!eEl||!hEl||!totalEl||!sEl.value||!eEl.value)return;
   const sd=parseISO(sEl.value),ed=parseISO(eEl.value);
   if(sd>ed){totalEl.value='End date is before start date';return;}
   const _on=[...document.querySelectorAll('.plan-day-cb')].filter(c=>c.checked).map(c=>parseInt(c.value,10));const _days=_on.length?_on:[0,1,2,3,4];
-  let n=0,d=new Date(sd);while(d<=ed){if(!isClosedDate(d)&&_days.includes((d.getDay()+6)%7))n++;d=addDays(d,1);}
+  planWeRefresh();
+  const _weOn=new Set([...document.querySelectorAll('.plan-we-cb')].filter(c=>c.checked).map(c=>c.value));
+  let n=0,d=new Date(sd);while(d<=ed){if(isWeekendDate(d)){if(_weOn.has(isoDate(d)))n++;}else if(!isClosedDate(d)&&_days.includes((d.getDay()+6)%7))n++;d=addDays(d,1);}
   const h=parseFloat(hEl.value)||0;
   totalEl.value=`${(n*h).toFixed(1)}h across ${n} day${n===1?'':'s'}`;
 }
@@ -5587,6 +5665,7 @@ function renderPlanPopover(){
       </div>
       ${kind==='proj'?`<div style="margin-bottom:12px"><label style="font-size:10px;letter-spacing:.07em;text-transform:uppercase;color:var(--dkgrey);display:block;margin-bottom:4px;font-weight:600">Days</label>
         <div style="display:flex;flex-wrap:wrap;gap:5px">${['Mon','Tue','Wed','Thu','Fri'].map((l,k)=>`<label class="crm-chip" style="font-size:11px;padding:4px 9px"><input type="checkbox" class="plan-day-cb" value="${k}" ${!Array.isArray(planPopoverState.days)||!planPopoverState.days.length||planPopoverState.days.includes(k)?'checked':''} onchange="planRecalcTotal()" style="margin:0 5px 0 0"/>${l}</label>`).join('')}</div></div>`:''}
+      ${kind==='proj'?`<div id="plan-we-wrap" style="display:none;margin-bottom:12px"><label style="font-size:10px;letter-spacing:.07em;text-transform:uppercase;color:var(--dkgrey);display:block;margin-bottom:4px;font-weight:600">Weekend overtime</label><div class="plan-we-list" style="display:flex;flex-wrap:wrap;gap:5px"></div><div style="font-size:10px;color:var(--grey);margin-top:4px">Only weekend days you have switched on appear here. Tick a day to put the hours on it.</div></div>`:''}
       ${kind==='proj'?(()=>{const others=st.users.filter(u=>!u.deactivated&&u.name!==person);return others.length?`<div style="margin-bottom:12px">
         <label style="font-size:10px;letter-spacing:.07em;text-transform:uppercase;color:var(--dkgrey);display:block;margin-bottom:4px;font-weight:600">Also add for</label>
         <div style="display:flex;flex-wrap:wrap;gap:5px">${others.map(u=>`<label class="crm-chip plan-extra-chip" data-pep="${escAttr(u.name)}" style="font-size:11px;padding:4px 10px"><input type="checkbox" class="plan-extra-person" value="${escAttr(u.name)}" style="margin:0 5px 0 0"/>${escAttr(u.name)}</label>`).join('')}</div>
@@ -5607,6 +5686,7 @@ function renderPlanPopover(){
     </div>
     ${mode==='edit'&&kind==='proj'&&updatedAt?`<div style="padding:6px 14px;font-size:10px;color:var(--grey);border-top:1px solid var(--mid)">Updated ${relTime(updatedAt)}${updatedBy?` by ${updatedBy}`:''}</div>`:''}
   </div>`;
+  if(kind==='proj'){planPopoverState._we={};if(mode==='edit'&&Array.isArray(planPopoverState.we))planPopoverState.we.forEach(x=>{planPopoverState._we[x]=true;});}
   setTimeout(()=>{(document.getElementById('plan-person-input')||document.getElementById('plan-projstage-input')||document.getElementById('plan-stage-input')||document.getElementById('plan-start-input'))?.focus();window.planRecalcTotal();window.planSyncExtraPeople();},0);
 }
 // Hide the chosen person's chip from "Also add for" so the list never includes them.
@@ -5638,6 +5718,7 @@ window.savePlanPopover=function(){
   const _dayCbs=[...document.querySelectorAll('.plan-day-cb')];const _picked=_dayCbs.filter(c=>c.checked).map(c=>parseInt(c.value,10));
   if(_dayCbs.length&&!_picked.length){undoToast('Tick at least one day.');return;}
   const days=_picked.length&&_picked.length<5?_picked:undefined;
+  const weSel=[...document.querySelectorAll('.plan-we-cb')].filter(c=>c.checked).map(c=>c.value);
   const notesEl=document.getElementById('plan-notes-input');
   const notes=notesEl?notesEl.value.trim():'';
   if(ps.mode==='new'){
@@ -5650,7 +5731,8 @@ window.savePlanPopover=function(){
       if(ps.kind==='proj'&&who!==person)addPlanRow(project,stage,who);
       for(let i=0;i<Math.max(1,weeks);i++){
         const s=isoDate(addDays(parseISO(sd),i*7)),e=isoDate(addDays(parseISO(ed),i*7));
-        commitDescCreate(ps.kind,{project,stage,person:who,type,days},s,e,hrsPerDay,notes);
+        const weI=i===0?weSel:weSel.map(x=>addDaysISO(x,i*7)).filter(planWeOnISO);
+        commitDescCreate(ps.kind,{project,stage,person:who,type,days,we:weI},s,e,hrsPerDay,notes);
         if(notes&&!(ps.kind==='leave'&&type!=='Bank Holiday'))setAssignmentNote({kind:ps.kind,project,stage,person:who,type,startDate:s},notes);
       }
     }
@@ -5658,11 +5740,11 @@ window.savePlanPopover=function(){
     const copyTo=ps.kind==='proj'?[...document.querySelectorAll('.plan-extra-person')].filter(cb=>cb.checked&&cb.value!==ps.person).map(cb=>cb.value):[];
     for(const who of copyTo){
       addPlanRow(project,stage,who);
-      commitDescCreate(ps.kind,{project,stage,person:who,type,days},sd,ed,hrsPerDay,notes);
+      commitDescCreate(ps.kind,{project,stage,person:who,type,days,we:weSel},sd,ed,hrsPerDay,notes);
       if(notes)setAssignmentNote({kind:ps.kind,project,stage,person:who,type,startDate:sd},notes);
     }
     const oldDesc={kind:ps.kind,project:ps.project,stage:ps.stage,person:ps.person,type:ps.type,startDate:ps.startDate,endDate:ps.endDate};
-    if(ps.kind==='proj')updatePlanAssignment(ps.id,{hrsPerDay,startDate:sd,endDate:ed,days});
+    if(ps.kind==='proj')updatePlanAssignment(ps.id,{hrsPerDay,startDate:sd,endDate:ed,days,we:weSel.length?weSel:undefined});
     else{clearRawRange(ps.kind,ps.person,ps.type,ps.startDate,ps.endDate);writeRawRange(ps.kind,person,type,sd,ed,hrsPerDay);}
     if(oldDesc.startDate!==sd||oldDesc.type!==type)setAssignmentNote(oldDesc,'');
     setAssignmentNote({...oldDesc,person,type:ps.kind==='proj'?undefined:type,startDate:sd},notes);
@@ -6870,11 +6952,11 @@ function setStageDates(p,ph,start,end,moveDays){
   const pn=p.name,os=ph.start,oe=ph.end;
   ph.start=start;ph.end=end;
   const list=st.planAssignments.filter(a=>a.project===pn&&a.stage===ph.name);
-  if(moveDays){for(const a of list){clearPlanAssignmentRange(a);a.startDate=isoDate(addDays(parseISO(a.startDate),moveDays));a.endDate=isoDate(addDays(parseISO(a.endDate),moveDays));a.updatedAt=new Date().toISOString();a.updatedBy=st.currentUser||'';applyPlanAssignment(a);}return;}
+  if(moveDays){for(const a of list){clearPlanAssignmentRange(a);if(Array.isArray(a.we)){const w=a.we.map(x=>addDaysISO(x,moveDays)).filter(planWeOnISO);if(w.length)a.we=w;else delete a.we;}a.startDate=isoDate(addDays(parseISO(a.startDate),moveDays));a.endDate=isoDate(addDays(parseISO(a.endDate),moveDays));a.updatedAt=new Date().toISOString();a.updatedBy=st.currentUser||'';applyPlanAssignment(a);}return;}
   if((os&&start>os)||(oe&&end<oe)){
     for(const a of list){
       if(a.endDate<start||a.startDate>end){clearPlanAssignmentRange(a);st.planAssignments=st.planAssignments.filter(x=>x.id!==a.id);continue;}
-      if(a.startDate<start||a.endDate>end){clearPlanAssignmentRange(a);if(a.startDate<start)a.startDate=start;if(a.endDate>end)a.endDate=end;applyPlanAssignment(a);}
+      if(a.startDate<start||a.endDate>end){clearPlanAssignmentRange(a);if(a.startDate<start)a.startDate=start;if(a.endDate>end)a.endDate=end;if(Array.isArray(a.we)){const w=a.we.filter(x=>x>=a.startDate&&x<=a.endDate);if(w.length)a.we=w;else delete a.we;}applyPlanAssignment(a);}
     }
   }
 }
@@ -10125,12 +10207,12 @@ window.doExport=function(){
             const bRate=billableOn(user.name,proj.name,dateForWk(wk));
             csv+=`${wk},"${q2(proj.name)}","${q2(client?.company)}","${q2(ph.name)}","${q2(user.name)}",${dayVals.join(',')},${regH},${otH},${tot},${bRate},${(tot*bRate).toFixed(2)},actual,"${note}"\n`;
           }
-          // Forecast entries — Mon–Fri only (forecast doesn't have OT/weekend concept)
-          const fd=[0,1,2,3,4].map(i=>parseFloat(gF(wk,proj.name,ph.name,user.name,i))||0);
+          // Forecast entries — Mon to Sun (Sat and Sun only where a weekend day was switched on)
+          const fd=[0,1,2,3,4,5,6].map(i=>parseFloat(gF(wk,proj.name,ph.name,user.name,i))||0);
           const ft=fd.reduce((s,v)=>s+v,0);
           if(ft>0){
             const bRateF=billableOn(user.name,proj.name,dateForWk(wk));
-            csv+=`${wk},"${q2(proj.name)}","${q2(client?.company)}","${q2(ph.name)}","${q2(user.name)}",${fd.join(',')},0,0,0,0,0,0,0,0,0,${ft},0,${ft},${bRateF},${(ft*bRateF).toFixed(2)},forecast,""\n`;
+            csv+=`${wk},"${q2(proj.name)}","${q2(client?.company)}","${q2(ph.name)}","${q2(user.name)}",${fd.join(',')},0,0,0,0,0,0,0,${ft},0,${ft},${bRateF},${(ft*bRateF).toFixed(2)},forecast,""\n`;
           }
         }
       }
@@ -10257,7 +10339,7 @@ const HELP_TEXT={
   forecast:{title:'How the forecast works',body:`
     <p style="margin:0 0 8px"><b>Two views.</b> <b>Projects</b> plans work project by project; <b>Team</b> shows each person's capacity — green is full, light is spare, red is over-allocated.</p>
     <p style="margin:0 0 8px"><b>Adding time.</b> Use the <b>+</b> column to bring in a project, stage or person. Click any cell on a row to add a milestone (a one-off note, no fee attached) or a time entry (counts towards hours and fees). Tick <b>Also add for</b> to create the same entry for several people at once.</p>
-    <p style="margin:0 0 8px"><b>Editing bars.</b> Click a bar to edit or delete it; drag its middle to move it, or its edges to extend or shorten it. Weekends and UK bank holidays are hatched and never receive hours. The orange vertical line marks <b>today</b> — forecast to its left is a record of what was planned; only forecast from today onward counts towards project health.</p>
+    <p style="margin:0 0 8px"><b>Editing bars.</b> Click a bar to edit or delete it; drag its middle to move it, or its edges to extend or shorten it. Weekends and UK bank holidays are hatched and never receive hours, and drawing or extending a bar over them leaves them out. To forecast weekend overtime, click that Saturday or Sunday heading to switch the day on, then draw or extend a bar over it, or tick it when you edit an entry. Each weekend day has to be switched on by hand. The orange vertical line marks <b>today</b> — forecast to its left is a record of what was planned; only forecast from today onward counts towards project health.</p>
     <p style="margin:0 0 8px"><b>Leave clashes.</b> A purple box on a project cell means that person is on leave that day (dashed = requested, awaiting a decision) — visible before you allocate, so a deadline booking can't hide a holiday. It never blocks; allocating over leave just shows a heads-up.</p>
     <p style="margin:0 0 8px"><b>Placeholder people.</b> <b>+ Placeholder person</b> creates a forecast-only person — no login, no timesheets, invisible everywhere else — for planning a future hire. Give them billable and cost rates and their allocated time prices into project health like anyone else's. Edit or remove them from the Team view.</p>
     <p style="margin:0 0 8px"><b>Milestones.</b> Collapsed project rows show milestones rather than hours, so the whole list reads as a timeline. Hover any cell to read every milestone in it; hours appear on the stage rows when a project is expanded.</p>
