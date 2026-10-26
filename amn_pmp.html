@@ -838,8 +838,8 @@ const STORE_KEY='amn_tracker_v1';
 // The newest build anyone opens records its number in the shared state
 // (st.meta.appBuild); a copy whose APP_BUILD is lower shows a "reopen from
 // your bookmark" banner. APP_VERSION_LABEL is the human-facing date, display only.
-const APP_BUILD=63;
-const APP_VERSION_LABEL='22 Oct 2026';
+const APP_BUILD=64;
+const APP_VERSION_LABEL='26 Oct 2026';
 // The portal's one door since the SharePoint copy was retired (Joe, 5 Sep 2026).
 // Both the stale-copy banner and the sidebar tooltip read from these, so the
 // address is written once. If Pages ever moves, change it here only.
@@ -10207,6 +10207,7 @@ let crmQ='';
 let crmFilt={rating:[],sector:'',type:'',never:false};
 let crmSort={by:'rating',dir:'asc'};
 let crmEditingInter=null,crmContactModal=null,crmOrgModal=null,crmEventModal=null,crmAddModal=false,crmLogModal=false,crmShowDoneOverview=false;
+let crmImp=null; // spreadsheet import in the event window: {eid,stage:'paste'|'preview',text,rows}
 let crmShowDoneActions=false,crmActionScope='mine';
 // One help panel per page, opened from a consistent slot beside the page title.
 let helpOpen={};
@@ -10298,7 +10299,7 @@ const HELP_TEXT={
     <p style="margin:0 0 8px"><b>Saving.</b> A contact, company or event card saves as you go, so there is nothing to remember: <b>Done</b>, × or a click outside all keep your changes. Picking from a list (an event, a connection) acts straight away. If a note or an action is still sitting in its box when you close the card, it is logged for you and the portal says so. Only the forms that create something new (Add to CRM, Log a conversation, a new event) need their button, and closing one with details typed in asks first. Each card shows who added it and who last edited it.</p>
     <p style="margin:0 0 8px"><b>Actions are the to-do list.</b> Anything that needs doing becomes an action with a due date — type <b>@</b> and pick a name to assign it. The Overview shows one prioritised list, overdue first. Ticked actions can be recovered from <b>recently completed</b>.</p>
     <p style="margin:0 0 8px"><b>Ratings keep the list honest.</b> <b>Hot</b> = actively pursuing (flagged in <i>Gone quiet</i> after 4 silent weeks), <b>Warm</b> = keep alive (3 months), <b>Cold</b> = long shot, <b>Dormant</b> = history only.</p>
-    <p style="margin:0 0 8px"><b>Events.</b> Conferences get an event: who you plan to meet, who you actually met, and which of us attended — attendance writes <b>Marketing and BD</b> time to those timesheets. The large notes box holds the programme and speakers.</p>
+    <p style="margin:0 0 8px"><b>Events.</b> Conferences get an event: who you plan to meet (with an RSVP column), who you actually met, and which of us attended — attendance writes <b>Marketing and BD</b> time to those timesheets. The large notes box holds the programme and speakers.</p>
     <p style="margin:0"><b>Active clients.</b> A company shows the <span class="badge badge-ok">client</span> badge once it has a project on the Projects page. One dataset, no separate list.</p>`},
   leave:{title:'How leave works',body:`
     <p><b>Request:</b> pick a type and your dates (weekends and bank holidays don't count — they're already off), tick any half days, and submit. Requests go to a director, who decides them (a director's own requests are booked straight away if self-approval is switched on for them, otherwise another director decides them). You can also start a request on your timesheet (past weeks included) by choosing <b>Full</b> or <b>Half</b> for a day on a leave row, or by clicking a day on your forecast leave row. Leave is always a full or half day; hours can't be typed, and leave is never copied from last week. A week waiting on a leave decision shows as awaiting approval rather than overdue.</p>
@@ -10679,7 +10680,7 @@ function renderCrmModal(){
   else if(crmEventModal!==null)el.innerHTML=crmEventModalHTML();
   else el.innerHTML='';
 }
-function crmCloseModals(){fkDrop('crm-');_crmXArm=false;crmEditingInter=null;crmContactModal=null;crmOrgModal=null;crmEventModal=null;crmAddModal=false;crmLogModal=false;crmShowDoneActions=false;crmNewContactOrg=null;
+function crmCloseModals(){fkDrop('crm-');_crmXArm=false;crmEditingInter=null;crmContactModal=null;crmOrgModal=null;crmEventModal=null;crmImp=null;crmAddModal=false;crmLogModal=false;crmShowDoneActions=false;crmNewContactOrg=null;
   for(const id of ['crm-act-typeahead','crm-add-name-suggest']){const el=document.getElementById(id);if(el)el.style.display='none';}}
 window.crmModalClose=()=>{const did=crmLeaveCard();crmCloseModals();render();crmLeaveToast(did);};
 // Discard on the create forms: close without the card commit (there is no card).
@@ -11231,20 +11232,22 @@ function crmEventModalHTML(){
   if(isNew){
     body+=`<div class="notice">Save the event first — then build the people and target-company lists.</div>`;
   }else{
-    body+=`<div style="border-top:1px solid var(--mid);padding-top:14px;margin-bottom:16px">${crmL(`People to meet (${e.attendees.length} — ${e.attendees.filter(a=>a.met).length} met)`)}
+    body+=`<div style="border-top:1px solid var(--mid);padding-top:14px;margin-bottom:16px">${crmL(`People to meet (${e.attendees.length} — ${e.attendees.filter(a=>a.rsvp==='yes').length} RSVP yes — ${e.attendees.filter(a=>a.met).length} met)`)}
       <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;align-items:flex-end">
         <div style="flex:1.2;min-width:160px">${crmL('Name')}<input id="crm-e-newname" placeholder="e.g. Jane Jeffries" style="width:100%;box-sizing:border-box"/></div>
         <div style="flex:1.2;min-width:160px">${crmL('Company')}<input id="crm-e-neworg" list="crm-e-orgs" placeholder="matches or creates" style="width:100%;box-sizing:border-box"/>${crmOrgDatalist('crm-e-orgs')}</div>
         <div style="flex:0.9;min-width:110px">${crmL('Role')}<select id="crm-e-newtype" style="width:100%"><option value="">—</option>${crmRoles().map(t=>`<option>${escAttr(t)}</option>`).join('')}</select></div>
         <button class="btn btn-primary btn-sm" onclick="crmEvtQuickAdd('${jsq(e.id)}')">Add to list</button>
       </div>
-      <div style="font-size:10px;color:var(--dkgrey);margin:-4px 0 10px">New people are created as full contacts (source: this event) and appear in the main Contacts list. Existing names match automatically.</div>`;
+      <div style="font-size:10px;color:var(--dkgrey);margin:-4px 0 10px">New people are created as full contacts (source: this event) and appear in the main Contacts list. Existing names match automatically.</div>
+      ${crmImpHTML(e)}`;
     if(e.attendees.length){
-      body+=`<table class="rtable crm-table"><thead><tr><th style="width:34px" title="Met?">Met</th><th>Who</th><th>Notes for / from this event</th><th></th></tr></thead><tbody>`;
+      body+=`<table class="rtable crm-table"><thead><tr><th style="width:34px" title="Met?">Met</th><th style="width:74px" title="Did they say they were coming?">RSVP</th><th>Who</th><th>Notes for / from this event</th><th></th></tr></thead><tbody>`;
       for(const a of e.attendees){
         const c=crmContact(a.contactId);if(!c)continue;
         body+=`<tr>
           <td><input type="checkbox" ${a.met?'checked':''} onchange="crmEvtMet('${jsq(e.id)}','${jsq(a.contactId)}',this.checked)"/></td>
+          <td><select style="font-size:11px;width:100%" onchange="crmEvtRsvp('${jsq(e.id)}','${jsq(a.contactId)}',this.value)"><option value="">—</option><option value="yes" ${a.rsvp==='yes'?'selected':''}>Yes</option><option value="no" ${a.rsvp==='no'?'selected':''}>No</option></select></td>
           <td style="font-size:12px"><a href="javascript:void(0)" onclick="crmOpenContact('${jsq(c.id)}')" style="color:var(--blk);font-weight:600">${escAttr(c.name)}</a>${c.orgId?`<div style="font-size:10px;color:var(--dkgrey)">${escAttr(crmOrgName(c.orgId))}</div>`:''}</td>
           <td><input value="${escAttr(a.note||'')}" placeholder="plan / what happened" style="width:100%;box-sizing:border-box;font-size:11px" onchange="crmEvtNote('${jsq(e.id)}','${jsq(a.contactId)}',this.value)"/></td>
           <td><a href="javascript:void(0)" onclick="crmEvtRemove('${jsq(e.id)}','${jsq(a.contactId)}')" style="color:var(--danger);text-decoration:none;font-weight:700">×</a></td></tr>`;
@@ -11262,6 +11265,189 @@ function crmEventModalHTML(){
     ${isNew?`<button class="btn btn-primary btn-sm" onclick="crmSaveEvent()">Add event</button>`:`<span class="fk-saved" id="crm-saved" style="margin-right:12px">${CRM_IDLE}</span><button class="btn btn-primary btn-sm" onclick="crmModalClose()">Done</button>`}`;
   return crmModalShell(isNew?'New event':escAttr(e.name),body,footer,0,'crm-e:'+(isNew?'new':e.id));
 }
+// ── Event guest list: import from a spreadsheet ───────────────────────────────
+// Paste rows copied from Excel (tab separated) or choose a CSV file. Columns are
+// found by their headings: Name, Company, Role / Job title, Email, RSVP, Attended.
+// Everything goes through the same matching the Add form uses — companies by name,
+// people by name + company (or email) — so nothing is duplicated. Existing people
+// are only topped up where a field is blank; nothing already filled is overwritten.
+function crmParseTable(text){
+  text=String(text||'').replace(/^﻿/,'');
+  const first=(text.split(/\r?\n/).find(l=>l.trim())||'');
+  const delim=first.indexOf('\t')>=0?'\t':',';
+  const rows=[];let row=[],cell='',q=false;
+  for(let i=0;i<text.length;i++){
+    const ch=text[i];
+    if(q){
+      if(ch==='"'){if(text[i+1]==='"'){cell+='"';i++;}else q=false;}
+      else cell+=ch;
+    }else if(ch==='"'&&cell===''){q=true;}
+    else if(ch===delim){row.push(cell);cell='';}
+    else if(ch==='\n'||ch==='\r'){
+      if(ch==='\r'&&text[i+1]==='\n')i++;
+      row.push(cell);cell='';
+      if(row.some(c=>c.trim()))rows.push(row);
+      row=[];
+    }else cell+=ch;
+  }
+  row.push(cell);if(row.some(c=>c.trim()))rows.push(row);
+  return rows;
+}
+function crmImpOrgKey(n){
+  let t=String(n||'').toLowerCase().replace(/&/g,' and ').replace(/[^a-z0-9]+/g,' ').trim().split(' ')
+    .filter(w=>w&&!['group','ltd','limited','llp','plc','uk','the','and'].includes(w));
+  if(t.length){const l=t.length-1;if(t[l].length>4&&t[l].slice(-1)==='s')t[l]=t[l].slice(0,-1);}
+  return t.join('');
+}
+function crmImpGuessType(job){
+  const j=String(job||'').toLowerCase();
+  const pick=r=>crmRoles().includes(r)?r:'';
+  if(/landscape/.test(j))return pick('Landscape Architect');
+  if(/solicitor|lawyer/.test(j))return pick('Lawyer');
+  if(/planning officer/.test(j))return '';
+  if(/planner|planning/.test(j))return pick('Planning consultant');
+  if(/contractor/.test(j))return pick('Contractor');
+  if(/project manager/.test(j))return pick('Project Manager');
+  if(/engineer|sustainab|ecolog|surveyor|consultant/.test(j))return pick('Consultant');
+  return '';
+}
+function crmImpYes(v){v=String(v||'').trim().toLowerCase();return v==='yes'||v==='y'||v==='true'||v==='attended'||v==='1';}
+function crmImpBuild(text,e){
+  const t=crmParseTable(text);
+  const norm=s=>String(s||'').trim().toLowerCase();
+  let hi=t.findIndex(r=>r.some(c=>norm(c)==='name'));
+  if(hi<0)return{error:'No heading row found. The first column heading needs to be "Name".'};
+  const head=t[hi].map(norm);
+  const col=(...names)=>head.findIndex(h=>names.includes(h));
+  const ci={name:col('name'),org:col('company','organisation','organization'),job:col('role','job title','title'),email:col('email','e-mail'),rsvp:col('rsvp'),att:col('attended','attendance')};
+  if(ci.name<0)return{error:'No Name column found.'};
+  const get=(r,i)=>i<0?'':String(r[i]==null?'':r[i]).trim();
+  const out=[];
+  for(const r of t.slice(hi+1)){
+    const name=get(r,ci.name);if(!name)continue;
+    const org=get(r,ci.org),job=get(r,ci.job),email=get(r,ci.email);
+    const rs=norm(get(r,ci.rsvp));
+    const x={name,orgName:org,job,email,rsvp:rs==='yes'||rs==='y'?'yes':(rs==='no'||rs==='n'?'no':''),met:crmImpYes(get(r,ci.att)),type:crmImpGuessType(job)};
+    // company: exact name → existing; same name ignoring punctuation / Group / s → suggested match
+    const exact=org?st.crmOrgs.find(o=>o.name.trim().toLowerCase()===org.toLowerCase()):null;
+    x.orgMode='new';x.orgId=null;x.candidates=[];
+    if(exact){x.orgMode='exact';x.orgId=exact.id;}
+    else if(org){
+      const k=crmImpOrgKey(org);
+      x.candidates=k?st.crmOrgs.filter(o=>crmImpOrgKey(o.name)===k).map(o=>o.id):[];
+      if(x.candidates.length){x.orgMode='match';x.orgId=x.candidates[0];}
+    }
+    out.push(x);
+  }
+  if(!out.length)return{error:'No people found under the headings.'};
+  return{rows:out};
+}
+function crmImpFindContact(x,orgId){
+  const nm=x.name.toLowerCase();
+  let c=orgId?st.crmContacts.find(k=>k.name.trim().toLowerCase()===nm&&(k.orgId===orgId||(k.orgIds||[]).includes(orgId))):null;
+  if(!c&&!orgId&&!x.orgName)c=st.crmContacts.find(k=>k.name.trim().toLowerCase()===nm&&!k.orgId);
+  if(!c&&x.email)c=st.crmContacts.find(k=>k.email&&k.email.trim().toLowerCase()===x.email.toLowerCase());
+  return c||null;
+}
+function crmImpHTML(e){
+  if(!crmImp||crmImp.eid!==e.id){
+    return`<div style="margin:0 0 12px"><button class="btn btn-sm" onclick="crmImpOpen('${jsq(e.id)}')">Import from spreadsheet…</button></div>`;
+  }
+  const box=(inner)=>`<div style="border:1px solid var(--mid);background:var(--off);padding:12px;margin:0 0 14px">${inner}</div>`;
+  if(crmImp.stage==='paste'){
+    return box(`${crmL('Import from spreadsheet')}
+      <div style="font-size:11px;color:var(--dkgrey);margin-bottom:8px">Copy the rows in Excel (including the heading row) and paste them here, or choose a CSV file. Headings used: Name, Company, Role (job title), Email, RSVP, Attended. You will see a preview before anything is saved.</div>
+      <textarea id="crm-imp-text" rows="6" oninput="crmImp.text=this.value" placeholder="Paste here" style="width:100%;box-sizing:border-box;font-size:11px;font-family:monospace">${escAttr(crmImp.text||'')}</textarea>
+      <div style="display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap">
+        <input type="file" accept=".csv,.tsv,.txt" onchange="crmImpFile(this)" style="font-size:11px"/>
+        <span style="flex:1"></span>
+        <button class="btn btn-sm" onclick="crmImpClose()">Cancel</button>
+        <button class="btn btn-primary btn-sm" onclick="crmImpPreview()">Preview</button>
+      </div>${crmImp.error?`<div style="color:var(--danger);font-size:11px;margin-top:8px">${escAttr(crmImp.error)}</div>`:''}`);
+  }
+  const rows=crmImp.rows;
+  let newC=0,oldC=0,newO=new Set(),useO=0;
+  rows.forEach(x=>{
+    const oid=x.orgMode==='new'?null:x.orgId;
+    if(crmImpFindContact(x,oid)&&(x.orgMode!=='new'||!x.orgName))oldC++;else newC++;
+    if(x.orgName){if(x.orgMode==='new')newO.add(x.orgName.toLowerCase());else useO++;}
+  });
+  const orgCell=(x,i)=>{
+    if(!x.orgName)return'<span style="color:var(--grey)">—</span>';
+    if(x.orgMode==='exact')return`${escAttr(x.orgName)}<div style="font-size:10px;color:var(--dkgrey)">already in CRM</div>`;
+    if(!x.candidates.length)return`${escAttr(x.orgName)}<div style="font-size:10px;color:var(--dkgrey)">new company</div>`;
+    return`<select style="font-size:11px;width:100%" onchange="crmImpOrg(${i},this.value)">${x.candidates.map(id=>`<option value="${escAttr(id)}" ${x.orgMode==='match'&&x.orgId===id?'selected':''}>Use existing: ${escAttr(crmOrgName(id))}</option>`).join('')}<option value="" ${x.orgMode==='new'?'selected':''}>Create new: ${escAttr(x.orgName)}</option></select>`;
+  };
+  return box(`${crmL('Import preview')}
+    <div style="font-size:11.5px;margin-bottom:8px">${rows.length} people: ${newC} new contact${newC===1?'':'s'}, ${oldC} already in the CRM (blank details topped up, nothing overwritten). ${newO.size} new compan${newO.size===1?'y':'ies'}. ${rows.filter(x=>x.met).length} marked as met, ${rows.filter(x=>x.rsvp==='yes').length} RSVP yes, ${rows.filter(x=>x.rsvp==='no').length} RSVP no.</div>
+    <div style="max-height:320px;overflow:auto;border:1px solid var(--mid);background:#fff"><table class="rtable crm-table" style="font-size:11px"><thead><tr><th>Name</th><th>Company</th><th>Job title</th><th>Email</th><th>Role</th><th>RSVP</th><th>Met</th></tr></thead><tbody>
+    ${rows.map((x,i)=>`<tr><td>${escAttr(x.name)}</td><td>${orgCell(x,i)}</td><td>${escAttr(x.job)}</td><td style="word-break:break-all">${escAttr(x.email)}</td>
+      <td><select style="font-size:11px;width:100%" onchange="crmImpRole(${i},this.value)"><option value="">—</option>${crmRoles().map(t=>`<option ${x.type===t?'selected':''}>${escAttr(t)}</option>`).join('')}</select></td>
+      <td>${x.rsvp==='yes'?'Yes':x.rsvp==='no'?'No':'—'}</td><td>${x.met?'✓':'—'}</td></tr>`).join('')}
+    </tbody></table></div>
+    <div style="display:flex;gap:8px;align-items:center;margin-top:8px">
+      <span style="flex:1"></span>
+      <button class="btn btn-sm" onclick="crmImpBack()">Back</button>
+      <button class="btn btn-sm" onclick="crmImpClose()">Cancel</button>
+      <button class="btn btn-primary btn-sm" onclick="crmImpCommit()">Import ${rows.length} people</button>
+    </div>`);
+}
+window.crmImpOpen=function(eid){crmImp={eid,stage:'paste',text:'',rows:null,error:''};render();}
+window.crmImpClose=function(){crmImp=null;render();}
+window.crmImpBack=function(){if(crmImp){crmImp.stage='paste';crmImp.error='';render();}}
+window.crmImpFile=function(inp){
+  const f=inp.files&&inp.files[0];if(!f||!crmImp)return;
+  const rd=new FileReader();
+  rd.onload=()=>{if(!crmImp)return;crmImp.text=String(rd.result||'');const ta=document.getElementById('crm-imp-text');if(ta)ta.value=crmImp.text;};
+  rd.readAsText(f);
+}
+window.crmImpPreview=function(){
+  if(!crmImp)return;
+  const e=crmEventById(crmImp.eid);if(!e)return;
+  const ta=document.getElementById('crm-imp-text');if(ta)crmImp.text=ta.value;
+  if(!String(crmImp.text||'').trim()){crmImp.error='Nothing to import yet. Paste the rows first.';render();return;}
+  const b=crmImpBuild(crmImp.text,e);
+  if(b.error){crmImp.error=b.error;render();return;}
+  crmImp.rows=b.rows;crmImp.stage='preview';crmImp.error='';render();
+}
+window.crmImpOrg=function(i,v){const x=crmImp&&crmImp.rows[i];if(!x)return;if(v){x.orgMode='match';x.orgId=v;}else{x.orgMode='new';x.orgId=null;}render();}
+window.crmImpRole=function(i,v){const x=crmImp&&crmImp.rows[i];if(x)x.type=v;}
+window.crmImpCommit=function(){
+  if(!crmImp||crmImp.stage!=='preview')return;
+  const e=crmEventById(crmImp.eid);if(!e)return;
+  normCrmEvent(e);
+  let added=0,existing=0,topped=0,orgsMade=0;
+  const orgCountBefore=st.crmOrgs.length;
+  for(const x of crmImp.rows){
+    let org=null;
+    if(x.orgName){
+      if(x.orgMode!=='new'&&x.orgId)org=crmOrg(x.orgId);
+      if(!org)org=crmFindOrCreateOrgByName(x.orgName);   // exact name reuses, otherwise creates
+    }
+    let c=crmImpFindContact(x,org?org.id:null);
+    if(!c){
+      c={id:crmId('ct'),name:x.name,orgId:org?org.id:null,orgIds:org?[org.id]:[],role:x.job||'',type:x.type||'',typeNote:'',email:x.email||'',phone:'',mobile:'',linkedin:'',sectors:org?org.sectors.slice():[],owner:cur().name,rating:'warm',source:e.name,links:[],createdBy:cur().name,createdAt:crmTodayISO()};
+      st.crmContacts.push(c);added++;
+    }else{
+      existing++;
+      let t=false;
+      if(!c.role&&x.job){c.role=x.job;t=true;}
+      if(!c.email&&x.email){c.email=x.email;t=true;}
+      if(!c.type&&x.type){c.type=x.type;t=true;}
+      if(t)topped++;
+    }
+    let a=e.attendees.find(k=>k.contactId===c.id);
+    if(!a){a={contactId:c.id,met:false,rsvp:'',note:''};e.attendees.push(a);}
+    if(x.met)a.met=true;
+    if(x.rsvp)a.rsvp=x.rsvp;
+  }
+  orgsMade=st.crmOrgs.length-orgCountBefore;
+  const n=crmImp.rows.length;
+  crmImp=null;
+  save();render();
+  undoToast(`Imported ${n} people: ${added} new contact${added===1?'':'s'}, ${existing} already in the CRM${topped?` (${topped} topped up)`:''}, ${orgsMade} new compan${orgsMade===1?'y':'ies'}.`);
+}
+
 // Write/adjust the event's Marketing and BD time: withdraw previous writes, then
 // re-write for current staff × open days. Evening events go to the overtime row
 // (day index +7). Submitted weeks are skipped and reported on the event card.
@@ -11325,7 +11511,7 @@ function crmEvtAddPersonCore(e,name,orgName,type,met){
     st.crmContacts.push(c);
   }
   const a=e.attendees.find(x=>x.contactId===c.id);
-  if(!a)e.attendees.push({contactId:c.id,met:!!met,note:''});
+  if(!a)e.attendees.push({contactId:c.id,met:!!met,rsvp:'',note:''});
   else if(met&&!a.met)a.met=true; // already listed, now met in person
   save();return true;
 }
@@ -11365,6 +11551,7 @@ window.mobEvQuickAdd=function(eid){
   if(crmEvtAddPersonCore(e,name,orgName,'',true))render();
 }
 window.crmEvtMet=function(eid,cid,v){const e=crmEventById(eid);if(!e)return;const a=e.attendees.find(x=>x.contactId===cid);if(a){a.met=!!v;save();render();}}
+window.crmEvtRsvp=function(eid,cid,v){const e=crmEventById(eid);if(!e)return;const a=e.attendees.find(x=>x.contactId===cid);if(a){a.rsvp=(v==='yes'||v==='no')?v:'';save();render();}}
 window.crmEvtNote=function(eid,cid,v){const e=crmEventById(eid);if(!e)return;const a=e.attendees.find(x=>x.contactId===cid);if(a){a.note=v;save();}}
 window.crmEvtRemove=function(eid,cid){const e=crmEventById(eid);if(!e)return;e.attendees=e.attendees.filter(a=>a.contactId!==cid);save();render();}
 window.crmEvtAddTarget=function(eid){const e=crmEventById(eid);if(!e)return;const inp=document.getElementById('crm-e-addorg');const name=(inp&&inp.value||'').trim();if(!name)return;const o=crmFindOrCreateOrgByName(name,{rating:'cold'});if(!e.targetOrgIds.includes(o.id))e.targetOrgIds.push(o.id);fkClear('crm-e-addorg');save();render();}
@@ -11515,7 +11702,7 @@ window.crmExportAllCSV=function(){
   for(const e of[...st.crmEvents].sort((a,b)=>(a.start||'')<(b.start||'')?-1:1)){
     rows.push(['Event',e.start||'','','','','','',(e.staff||[]).join('; '),e.evening?'Evening / overtime':'','',e.name,[e.link,e.notes].filter(Boolean).join(' · ')].map(crmCsv).join(','));
     for(const at of e.attendees){const c=crmContact(at.contactId);if(!c)continue;
-      rows.push(['Event attendee',e.start||'',c.name,crmOrgName(c.orgId),'','','','',at.met?'Met':'Not met','',at.note||'',e.name].map(crmCsv).join(','));}
+      rows.push(['Event attendee',e.start||'',c.name,crmOrgName(c.orgId),'','','','',at.met?'Met':'Not met','',at.note||'',e.name+(at.rsvp?' · RSVP '+at.rsvp:'')].map(crmCsv).join(','));}
     for(const oid of e.targetOrgIds){rows.push(['Event target company',e.start||'','',crmOrgName(oid),'','','','','','','',e.name].map(crmCsv).join(','));}
   }
   const el=document.createElement('a');el.href=URL.createObjectURL(new Blob([rows.join('\n')],{type:'text/csv'}));el.download='amn-crm-all.csv';el.click();
