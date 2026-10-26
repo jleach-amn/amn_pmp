@@ -843,7 +843,7 @@ const STORE_KEY='amn_tracker_v1';
 // The newest build anyone opens records its number in the shared state
 // (st.meta.appBuild); a copy whose APP_BUILD is lower shows a "reopen from
 // your bookmark" banner. APP_VERSION_LABEL is the human-facing date, display only.
-const APP_BUILD=65;
+const APP_BUILD=66;
 const APP_VERSION_LABEL='26 Oct 2026';
 // The portal's one door since the SharePoint copy was retired (Joe, 5 Sep 2026).
 // Both the stale-copy banner and the sidebar tooltip read from these, so the
@@ -2699,7 +2699,24 @@ function planAsgDayOpen(a,d){
   if(isWeekendDate(d))return !!(a.we&&a.we.includes(isoDate(d)));
   return !isClosedDate(d)&&planDayOn(a,d);
 }
-function planWeHasTime(iso){return st.planAssignments.some(a=>a.we&&a.we.includes(iso));}
+// Non-billable weekend time lives in the timesheet's own non-billable cells (Sat and Sun,
+// day 5 and 6), the same cells the timesheet's overtime tick unlocks.
+function nbWeHrs(person,type,iso){
+  const x=dateToWkDay(parseISO(iso));if(x.dayIdx<5)return 0;
+  return gNB(x.wk,type,person,x.dayIdx);
+}
+function nbWeTypeOn(person,iso){
+  const x=dateToWkDay(parseISO(iso));if(x.dayIdx<5)return[];
+  const out=[];for(const t of getNBActive(x.wk,person)){const h=gNB(x.wk,t,person,x.dayIdx);if(h>0)out.push({type:t,hours:h});}
+  return out;
+}
+function nbWeDates(person,type,s,e){const out=[];let d=parseISO(s);const end=parseISO(e);while(d<=end){if(planWeOn(d)&&nbWeHrs(person,type,isoDate(d))>0)out.push(isoDate(d));d=addDays(d,1);}return out;}
+function planWeHasTime(iso){
+  if(st.planAssignments.some(a=>a.we&&a.we.includes(iso)))return true;
+  const x=dateToWkDay(parseISO(iso));
+  for(const k of Object.keys(st.nonBillable)){const p=k.split('||');if(p[0]===x.wk&&parseInt(p[3])===x.dayIdx&&(parseFloat(st.nonBillable[k])||0)>0)return true;}
+  return false;
+}
 window.planWeToggle=function(iso){
   if(!planEditor())return;
   const k=PLAN_WE_PREFIX+iso;
@@ -2819,6 +2836,7 @@ function personLeaveNBHrsInCol(person,col){
   let t=0,d=new Date(col.start);
   while(d<=col.end){
     if(!isWeekendDate(d)){for(const e of personLeaveForDate(person,d))t+=e.hours;for(const e of personNBForDate(person,d))t+=e.hours;}
+    else if(planWeOn(d)){for(const e of nbWeTypeOn(person,isoDate(d)))t+=e.hours;}
     d=addDays(d,1);
   }
   return t;
@@ -2853,7 +2871,7 @@ function personBreakdownInCol(person,col){
     if(!isWeekendDate(d)){
       for(const e of personLeaveForDate(person,d))leave[e.type]=(leave[e.type]||0)+e.hours;
       for(const e of personNBForDate(person,d))nb[e.type]=(nb[e.type]||0)+e.hours;
-    }
+    }else if(planWeOn(d)){for(const e of nbWeTypeOn(person,isoDate(d)))nb[e.type]=(nb[e.type]||0)+e.hours;}
     d=addDays(d,1);
   }
   return{proj,leave,nb};
@@ -2945,8 +2963,12 @@ function personRuns(kind,person,cols){
   const _t0=new Date();_t0.setHours(0,0,0,0);
   const runs=[];let cur=null,d=new Date(start<_t0?_t0:start);
   while(d<=end){
-    if(!isClosedDate(d)){
-      const e=personNBForDate(person,d)[0]||null;
+    let _skip=false,_e=null;
+    if(isClosedDate(d)){
+      if(isWeekendDate(d)&&planWeOn(d)){_e=nbWeTypeOn(person,isoDate(d))[0]||null;if(!_e)_skip=true;}else _skip=true;
+    }else _e=personNBForDate(person,d)[0]||null;
+    if(!_skip){
+      const e=_e;
       if(e&&cur&&cur.type===e.type&&cur.hrsPerDay===e.hours){cur.endDate=isoDate(d);}
       else{if(cur)runs.push(cur);cur=e?{id:'v-'+kind+'-'+person+'-'+isoDate(d),kind,person,type:e.type,startDate:isoDate(d),endDate:isoDate(d),hrsPerDay:e.hours}:null;}
     }
@@ -2957,11 +2979,14 @@ function personRuns(kind,person,cols){
 }
 function clearRawRange(kind,person,type,startDate,endDate){
   let d=parseISO(startDate);const end=parseISO(endDate);
-  while(d<=end){if(!isClosedDate(d)){const{wk,dayIdx}=dateToWkDay(d);if(kind==='leave')sL(wk,type,person,dayIdx,0);else sNB(wk,type,person,dayIdx,0);}d=addDays(d,1);}
+  while(d<=end){if(!isClosedDate(d)||(kind==='nb'&&isWeekendDate(d)&&planWeOn(d))){const{wk,dayIdx}=dateToWkDay(d);if(kind==='leave')sL(wk,type,person,dayIdx,0);else sNB(wk,type,person,dayIdx,0);}d=addDays(d,1);}
 }
-function writeRawRange(kind,person,type,startDate,endDate,hrsPerDay){
+function writeRawRange(kind,person,type,startDate,endDate,hrsPerDay,we){
   let d=parseISO(startDate);const end=parseISO(endDate);
-  while(d<=end){if(!isClosedDate(d)){const{wk,dayIdx}=dateToWkDay(d);if(kind==='leave'){addLeaveActive(wk,person,type);sL(wk,type,person,dayIdx,hrsPerDay);}else{addNBActive(wk,person,type);sNB(wk,type,person,dayIdx,hrsPerDay);}}d=addDays(d,1);}
+  while(d<=end){
+    const _wkd=kind==='nb'&&isWeekendDate(d)&&Array.isArray(we)&&we.includes(isoDate(d))&&planWeOn(d);   // a switched-on weekend day, listed by the caller
+    if(!isClosedDate(d)||_wkd){const{wk,dayIdx}=dateToWkDay(d);if(kind==='leave'){addLeaveActive(wk,person,type);sL(wk,type,person,dayIdx,hrsPerDay);}else{addNBActive(wk,person,type);sNB(wk,type,person,dayIdx,hrsPerDay);if(_wkd)setNBOT(wk,type,person,true);}}
+    d=addDays(d,1);}
 }
 // Unified commit helpers used by drag-move/resize/popover-save for all three kinds
 // (proj uses the stored st.planAssignments array; leave/nb write raw cells directly).
@@ -3015,8 +3040,15 @@ function commitDescRange(desc,newStart,newEnd,newHrs){
     updatePlanAssignment(desc.id,{startDate:newStart,endDate:newEnd,hrsPerDay:hrs,we:we.length?we:undefined});return;
   }
   if(desc.kind==='leave'){_lvSwallowClick=true;editLeaveDates(desc.person,desc.startDate,newStart,newEnd);return;}
+  let _we;
+  if(desc.kind==='nb'){
+    const oldWe=nbWeDates(desc.person,desc.type,desc.startDate,desc.endDate);
+    _we=planWeAfterChange(oldWe,desc.startDate,desc.endDate,newStart,newEnd);
+    const moved=newStart!==desc.startDate&&newEnd!==desc.endDate;
+    if(moved&&oldWe.length&&_we.length<oldWe.length)undoToast(`${oldWe.length-_we.length} weekend day${oldWe.length-_we.length===1?'':'s'} not carried over, because the new weekend is not switched on.`);
+  }
   clearRawRange(desc.kind,desc.person,desc.type,desc.startDate,desc.endDate);
-  writeRawRange(desc.kind,desc.person,desc.type,newStart,newEnd,hrs);
+  writeRawRange(desc.kind,desc.person,desc.type,newStart,newEnd,hrs,_we);
 }
 function commitDescCreate(kind,identity,startDate,endDate,hrsPerDay,notes){
   if(kind==='proj')return addPlanAssignment(identity.project,identity.stage,identity.person,startDate,endDate,hrsPerDay,notes,identity.days,identity.we);
@@ -3027,7 +3059,7 @@ function commitDescCreate(kind,identity,startDate,endDate,hrsPerDay,notes){
     if(out.error)undoToast(out.error);
     return;
   }
-  writeRawRange(kind,identity.person,identity.type,startDate,endDate,hrsPerDay);
+  writeRawRange(kind,identity.person,identity.type,startDate,endDate,hrsPerDay,identity.we);
 }
 
 // ── Leave / NB row visibility — starts empty; a row appears once someone is added
@@ -5222,7 +5254,7 @@ function buildAssignmentRow(kind,identity,person,cols,rowLabel,indent,removable,
       // Resize handles appear only on the outer edges of the whole assignment.
       let j=i,firstSeg=true;
       // A switched-on weekend day belongs to a project bar only if the bar lists it.
-      const offCol=cc=>cc.isWeekend&&!(kind==='proj'&&cc.weOpen&&Array.isArray(a.we)&&a.we.includes(cc.key));
+      const offCol=cc=>cc.isWeekend&&!(cc.weOpen&&((kind==='proj'&&Array.isArray(a.we)&&a.we.includes(cc.key))||(kind==='nb'&&nbWeHrs(person,a.type,cc.key)>0)));
       while(j<=end){
         if(offCol(cols[j])){
           h+=`<td class="plan-cell plan-weekend-cell${cols[j].weOpen?' plan-we-open':''}${cols[j].isToday?' plan-today-cell':''}"></td>`;
@@ -5249,7 +5281,7 @@ function buildAssignmentRow(kind,identity,person,cols,rowLabel,indent,removable,
       const mc=clashAt(c.start,c.end);
       h+=`<td class="plan-cell${planColCls(c)}${mc.cls}"${mc.title}></td>`;
       i++;
-    } else if(!c.assignStart&&!(kind==='proj'&&c.weOpen)){
+    } else if(!c.assignStart&&!((kind==='proj'||kind==='nb')&&c.weOpen)){
       // Weekend cell on a Leave/NB row: milestones allowed, time is not.
       h+=(kind==='leave'||kind==='nb')&&edR?weekendMsCell(chosenProject,null,person,c):`<td class="plan-cell plan-weekend-cell${planColCls(c)}">${(kind==='leave'||kind==='nb')?bdayChip(person,c):''}</td>`;
       i++;
@@ -5498,6 +5530,7 @@ function enrichDesc(desc){
   if(desc.kind==='stage')return desc;
   const notes=getAssignmentNote(desc);
   if(desc.kind==='proj'){const a=st.planAssignments.find(x=>x.id===desc.id);if(a)return{...desc,notes,days:a.days,we:a.we,updatedAt:a.updatedAt,updatedBy:a.updatedBy};}
+  if(desc.kind==='nb')return{...desc,notes,we:nbWeDates(desc.person,desc.type,desc.startDate,desc.endDate)};
   return{...desc,notes};
 }
 // Leave bars may be dragged/resized only when the change can route through the
@@ -5665,7 +5698,7 @@ function renderPlanPopover(){
       </div>
       ${kind==='proj'?`<div style="margin-bottom:12px"><label style="font-size:10px;letter-spacing:.07em;text-transform:uppercase;color:var(--dkgrey);display:block;margin-bottom:4px;font-weight:600">Days</label>
         <div style="display:flex;flex-wrap:wrap;gap:5px">${['Mon','Tue','Wed','Thu','Fri'].map((l,k)=>`<label class="crm-chip" style="font-size:11px;padding:4px 9px"><input type="checkbox" class="plan-day-cb" value="${k}" ${!Array.isArray(planPopoverState.days)||!planPopoverState.days.length||planPopoverState.days.includes(k)?'checked':''} onchange="planRecalcTotal()" style="margin:0 5px 0 0"/>${l}</label>`).join('')}</div></div>`:''}
-      ${kind==='proj'?`<div id="plan-we-wrap" style="display:none;margin-bottom:12px"><label style="font-size:10px;letter-spacing:.07em;text-transform:uppercase;color:var(--dkgrey);display:block;margin-bottom:4px;font-weight:600">Weekend overtime</label><div class="plan-we-list" style="display:flex;flex-wrap:wrap;gap:5px"></div><div style="font-size:10px;color:var(--grey);margin-top:4px">Only weekend days you have switched on appear here. Tick a day to put the hours on it.</div></div>`:''}
+      ${kind!=='leave'?`<div id="plan-we-wrap" style="display:none;margin-bottom:12px"><label style="font-size:10px;letter-spacing:.07em;text-transform:uppercase;color:var(--dkgrey);display:block;margin-bottom:4px;font-weight:600">Weekend overtime</label><div class="plan-we-list" style="display:flex;flex-wrap:wrap;gap:5px"></div><div style="font-size:10px;color:var(--grey);margin-top:4px">Only weekend days you have switched on appear here. Tick a day to put the hours on it.</div></div>`:''}
       ${kind==='proj'?(()=>{const others=st.users.filter(u=>!u.deactivated&&u.name!==person);return others.length?`<div style="margin-bottom:12px">
         <label style="font-size:10px;letter-spacing:.07em;text-transform:uppercase;color:var(--dkgrey);display:block;margin-bottom:4px;font-weight:600">Also add for</label>
         <div style="display:flex;flex-wrap:wrap;gap:5px">${others.map(u=>`<label class="crm-chip plan-extra-chip" data-pep="${escAttr(u.name)}" style="font-size:11px;padding:4px 10px"><input type="checkbox" class="plan-extra-person" value="${escAttr(u.name)}" style="margin:0 5px 0 0"/>${escAttr(u.name)}</label>`).join('')}</div>
@@ -5686,7 +5719,7 @@ function renderPlanPopover(){
     </div>
     ${mode==='edit'&&kind==='proj'&&updatedAt?`<div style="padding:6px 14px;font-size:10px;color:var(--grey);border-top:1px solid var(--mid)">Updated ${relTime(updatedAt)}${updatedBy?` by ${updatedBy}`:''}</div>`:''}
   </div>`;
-  if(kind==='proj'){planPopoverState._we={};if(mode==='edit'&&Array.isArray(planPopoverState.we))planPopoverState.we.forEach(x=>{planPopoverState._we[x]=true;});}
+  if(kind!=='leave'){planPopoverState._we={};if(mode==='edit'&&Array.isArray(planPopoverState.we))planPopoverState.we.forEach(x=>{planPopoverState._we[x]=true;});}
   setTimeout(()=>{(document.getElementById('plan-person-input')||document.getElementById('plan-projstage-input')||document.getElementById('plan-stage-input')||document.getElementById('plan-start-input'))?.focus();window.planRecalcTotal();window.planSyncExtraPeople();},0);
 }
 // Hide the chosen person's chip from "Also add for" so the list never includes them.
@@ -5745,7 +5778,7 @@ window.savePlanPopover=function(){
     }
     const oldDesc={kind:ps.kind,project:ps.project,stage:ps.stage,person:ps.person,type:ps.type,startDate:ps.startDate,endDate:ps.endDate};
     if(ps.kind==='proj')updatePlanAssignment(ps.id,{hrsPerDay,startDate:sd,endDate:ed,days,we:weSel.length?weSel:undefined});
-    else{clearRawRange(ps.kind,ps.person,ps.type,ps.startDate,ps.endDate);writeRawRange(ps.kind,person,type,sd,ed,hrsPerDay);}
+    else{clearRawRange(ps.kind,ps.person,ps.type,ps.startDate,ps.endDate);writeRawRange(ps.kind,person,type,sd,ed,hrsPerDay,ps.kind==='nb'?weSel:undefined);}
     if(oldDesc.startDate!==sd||oldDesc.type!==type)setAssignmentNote(oldDesc,'');
     setAssignmentNote({...oldDesc,person,type:ps.kind==='proj'?undefined:type,startDate:sd},notes);
   }
@@ -10339,7 +10372,7 @@ const HELP_TEXT={
   forecast:{title:'How the forecast works',body:`
     <p style="margin:0 0 8px"><b>Two views.</b> <b>Projects</b> plans work project by project; <b>Team</b> shows each person's capacity — green is full, light is spare, red is over-allocated.</p>
     <p style="margin:0 0 8px"><b>Adding time.</b> Use the <b>+</b> column to bring in a project, stage or person. Click any cell on a row to add a milestone (a one-off note, no fee attached) or a time entry (counts towards hours and fees). Tick <b>Also add for</b> to create the same entry for several people at once.</p>
-    <p style="margin:0 0 8px"><b>Editing bars.</b> Click a bar to edit or delete it; drag its middle to move it, or its edges to extend or shorten it. Weekends and UK bank holidays are hatched and never receive hours, and drawing or extending a bar over them leaves them out. To forecast weekend overtime, click that Saturday or Sunday heading to switch the day on, then draw or extend a bar over it, or tick it when you edit an entry. Each weekend day has to be switched on by hand. The orange vertical line marks <b>today</b> — forecast to its left is a record of what was planned; only forecast from today onward counts towards project health.</p>
+    <p style="margin:0 0 8px"><b>Editing bars.</b> Click a bar to edit or delete it; drag its middle to move it, or its edges to extend or shorten it. Weekends and UK bank holidays are hatched and never receive hours, and drawing or extending a bar over them leaves them out. To forecast weekend overtime, click that Saturday or Sunday heading to switch the day on, then draw or extend a bar over it, or tick it when you edit an entry. This works on project and non-billable rows (Admin and so on); leave stays closed. Each weekend day has to be switched on by hand. The orange vertical line marks <b>today</b> — forecast to its left is a record of what was planned; only forecast from today onward counts towards project health.</p>
     <p style="margin:0 0 8px"><b>Leave clashes.</b> A purple box on a project cell means that person is on leave that day (dashed = requested, awaiting a decision) — visible before you allocate, so a deadline booking can't hide a holiday. It never blocks; allocating over leave just shows a heads-up.</p>
     <p style="margin:0 0 8px"><b>Placeholder people.</b> <b>+ Placeholder person</b> creates a forecast-only person — no login, no timesheets, invisible everywhere else — for planning a future hire. Give them billable and cost rates and their allocated time prices into project health like anyone else's. Edit or remove them from the Team view.</p>
     <p style="margin:0 0 8px"><b>Milestones.</b> Collapsed project rows show milestones rather than hours, so the whole list reads as a timeline. Hover any cell to read every milestone in it; hours appear on the stage rows when a project is expanded.</p>
