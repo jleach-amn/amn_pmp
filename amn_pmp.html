@@ -120,6 +120,10 @@ input::placeholder,textarea::placeholder{color:var(--grey);opacity:.85}input[typ
 .empty{color:var(--dkgrey);font-size:13px;padding:2rem 0;text-align:center;letter-spacing:.03em;font-weight:400}
 .notice{font-size:12px;color:var(--dkgrey);background:var(--blue-lt);border-left:3px solid var(--blue);border-radius:0 var(--r) var(--r) 0;padding:10px 14px;margin-bottom:16px}
 .wknav{display:flex;align-items:center;gap:12px;margin-bottom:20px;flex-wrap:wrap}
+/* Forecast toolbar (earlier / later / Today / view / Expand all) is pinned with the
+   dates row by planStickyHead(), so you can move through time from anywhere down
+   a long list of projects. Opaque, and above the pinned thead (z 7). */
+.wknav.plan-nav{position:relative;z-index:8;background:var(--off);padding:8px 0;margin-bottom:12px;will-change:transform}
 .wklabel{font-family:'Figtree',sans-serif;font-size:16px;font-weight:600;min-width:200px;text-align:center;color:var(--blk);letter-spacing:.01em}
 .subbar{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;background:var(--off);border:1px solid var(--mid);border-radius:var(--r-lg);margin-top:14px;gap:10px;flex-wrap:wrap}
 .proj-click{cursor:pointer;transition:background-color .15s}.proj-click:hover{background:var(--off)}
@@ -843,7 +847,7 @@ const STORE_KEY='amn_tracker_v1';
 // The newest build anyone opens records its number in the shared state
 // (st.meta.appBuild); a copy whose APP_BUILD is lower shows a "reopen from
 // your bookmark" banner. APP_VERSION_LABEL is the human-facing date, display only.
-const APP_BUILD=66;
+const APP_BUILD=67;
 const APP_VERSION_LABEL='26 Oct 2026';
 // The portal's one door since the SharePoint copy was retired (Joe, 5 Sep 2026).
 // Both the stale-copy banner and the sidebar tooltip read from these, so the
@@ -3731,13 +3735,32 @@ const canManage=()=>isAdmin()||isPM();
 // page-flow table that should behave this way.
 function planStickyHead(){
   try{
+    // Forecast toolbar: pinned to the viewport top, then the dates row pins directly
+    // beneath it. Measured with the toolbar's own transform cleared so its natural
+    // position is known.
+    const nav=document.querySelector('.wknav.plan-nav');
+    let navH=0,navBottom=0;
+    if(nav){
+      nav.style.transform='';
+      const nRect=nav.getBoundingClientRect();navH=nRect.height;
+      const tb=document.querySelector('.plan-scroll table');
+      let y=0;
+      if(tb&&tb.tHead){
+        const tR=tb.getBoundingClientRect();
+        const hh=tb.tHead.getBoundingClientRect().height;
+        y=Math.min(Math.max(0,-nRect.top),Math.max(0,tR.bottom-navH-hh-nRect.top));
+      }else y=Math.max(0,-nRect.top);
+      nav.style.transform=y?`translateY(${y}px)`:'';
+      navBottom=nRect.top+y+navH;
+    }
     const tables=document.querySelectorAll('.plan-scroll table, table.page-freeze');
     for(const table of tables){
       const thead=table.tHead;if(!thead)continue;
       const tRect=table.getBoundingClientRect();
       const headH=thead.getBoundingClientRect().height;
+      const pin=(nav&&table.closest('.plan-scroll'))?navBottom:0;
       let y=0;
-      if(tRect.top<0)y=Math.min(-tRect.top,Math.max(0,tRect.height-headH));
+      if(tRect.top<pin)y=Math.min(pin-tRect.top,Math.max(0,tRect.height-headH));
       thead.style.transform=y?`translateY(${y}px)`:'';
     }
   }catch(e){}
@@ -4742,7 +4765,7 @@ function buildForecast(){
   </div>
   </div>`:`<div class="notice">You're viewing the plan for your projects, plus the team's leave and non-billable time. Only PMs and admins can change it — leave is requested from the Leave page.</div>`}
   ${planMode==='team'?`<div class="notice">See how each person&rsquo;s time is allocated across projects, leave and non-billable work — green means full, light means open capacity, red means over-allocated. Expand a person to see and edit the detail.</div>`:(planView==='month'?`<div class="notice">Month view is a long-range overview — switch to Week or Day to create or edit entries.</div>`:'')}
-  <div class="wknav" style="justify-content:space-between;flex-wrap:wrap">
+  <div class="wknav plan-nav" style="justify-content:space-between;flex-wrap:wrap">
     <div style="display:flex;align-items:center;gap:12px">
       <button class="btn btn-sm" onclick="planNav(-1)">← earlier</button>
       <span class="wklabel" style="min-width:230px">${rangeLabel}</span>
@@ -6468,7 +6491,7 @@ function buildProjEdit(i){
   }
 
   h+=`<div class="ep-actionbar">
-    <button class="btn btn-primary" onclick="closeProjEdit()">Done</button>
+    <button class="btn btn-primary" onclick="closeProjEdit(true)">Done</button>
     <span class="fk-saved" id="ep-saved-${i}">${EP_IDLE}</span>
   </div></div>`;
   return h;
@@ -9465,10 +9488,15 @@ function epDirtyNow(i){
   }
   return false;
 }
-window.closeProjEdit=function(){
+window.closeProjEdit=function(toProject){
   // Build 52: nothing to ask. Everything typed is committed on the way out.
+  // Build 67: Done returns to this project's own home page, not the projects list
+  // (the back arrow still goes to the list).
+  const _p=toProject&&editingProj!==null&&editingProj!==undefined?st.projects[editingProj]:null;
   epLeave();
-  epUnsaved=false;editingProj=null;projEditDraft={};render();
+  epUnsaved=false;editingProj=null;projEditDraft={};
+  if(_p){healthProj=_p.name;expandedStage=null;}
+  render();
 }
 // A plain three-way question — Save / Discard / Cancel. Deliberately NOT the
 // app's openConfirmModal, which demands a typed word (it guards destructive
