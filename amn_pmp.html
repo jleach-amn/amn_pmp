@@ -847,7 +847,7 @@ const STORE_KEY='amn_tracker_v1';
 // The newest build anyone opens records its number in the shared state
 // (st.meta.appBuild); a copy whose APP_BUILD is lower shows a "reopen from
 // your bookmark" banner. APP_VERSION_LABEL is the human-facing date, display only.
-const APP_BUILD=67;
+const APP_BUILD=68;
 const APP_VERSION_LABEL='26 Oct 2026';
 // The portal's one door since the SharePoint copy was retired (Joe, 5 Sep 2026).
 // Both the stale-copy banner and the sidebar tooltip read from these, so the
@@ -1794,7 +1794,7 @@ function applyLeaveTime(r){
 // closure) so they appear everywhere leave appears; the closure record just groups
 // them for listing/removal.
 function createClosureRequests(c){
-  for(const u of st.users.filter(x=>!x.deactivated)){
+  for(const u of staffUsers()){
     const r={id:'lr'+Date.now()+Math.floor(Math.random()*100000)+u.name.length,person:u.name,type:'Annual leave',startDate:c.startDate,endDate:c.endDate,halfDays:{},note:c.label,adminNote:'',adminActionDue:'',adminActionDone:false,status:'approved',source:'closure',closure:true,closureId:c.id,requestedAt:new Date().toISOString(),requestedBy:st.currentUser||'admin',decidedBy:st.currentUser||'admin',decidedAt:new Date().toISOString(),timeWrites:[],timeSkipped:[]};
     st.leaveRequests.push(r);
     applyLeaveTime(r);
@@ -2304,7 +2304,7 @@ function buildLeaveCalendar(){
   const _todayISO=isoDate(new Date());
   const nDays=new Date(y,mo+1,0).getDate();
   const monthLabel=base.toLocaleDateString('en-GB',{month:'long',year:'numeric'});
-  const people=st.users.filter(u=>!u.deactivated).map(u=>u.name);
+  const people=staffUsers().map(u=>u.name);
   const isAd=isDirector();
   let h=`<div class="${lvCardCls('cal')}"><div class="lv-head" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
     <div class="card-title" style="margin:0;cursor:pointer" onclick="lvTogCard('cal')">${lvCaret('cal')}Team calendar, ${monthLabel}</div>
@@ -2437,7 +2437,7 @@ function buildLeave(){
   h+=`</div>`;
   // Admin: team summary + closures
   if(isAd){
-    const others=st.users.filter(u=>!u.deactivated);
+    const others=staffUsers();
     if(st.leaveClosures.length)h+=`<div class="card"><div style="font-size:11px;color:var(--dkgrey)"><b>Office closures:</b> ${st.leaveClosures.map(c=>`${escAttr(c.label)} (${fmt(parseISO(c.startDate))} – ${fmt(parseISO(c.endDate))}) <button class="btn btn-sm" style="font-size:9px;padding:1px 6px" onclick="rmLeaveClosure('${c.id}')">remove</button>`).join(' · ')} <span style="color:var(--grey)">— add via + Add leave → Everyone</span></div></div>`;
   }
   return h;
@@ -2483,8 +2483,8 @@ function lvSummaryRows(year){
       while(d<=end){if(!isClosedDate(d)&&d.getFullYear()===year)add(r.person,d,r.type,(r.halfDays&&r.halfDays[isoDate(d)])?0.5:1);d=addDays(d,1);}
     }
   }
-  const people=st.users.filter(u=>!u.deactivated).map(u=>u.name);
-  for(const p of Object.keys(by))if(!people.includes(p)&&st.users.some(u=>u.name===p))people.push(p);
+  const people=staffUsers().map(u=>u.name);
+  for(const p of Object.keys(by))if(!people.includes(p)&&st.users.some(u=>u.name===p&&u.role!=='subcontractor'))people.push(p);
   const rnd=x=>Math.round(x*100)/100;
   return people.map(p=>{
     const r=by[p]||mk(p);
@@ -3069,8 +3069,8 @@ function commitDescCreate(kind,identity,startDate,endDate,hrsPerDay,notes){
 // ── Leave / NB row visibility — starts empty; a row appears once someone is added
 // via the planner, or automatically if they already have logged data (so nothing
 // entered on the Timesheets tab becomes invisible here).
-function getLeaveRows(){return st.users.filter(u=>!u.deactivated).map(u=>u.name);}
-function getNBRows(){return st.users.filter(u=>!u.deactivated).map(u=>u.name);}
+function getLeaveRows(){return staffUsers().map(u=>u.name);}
+function getNBRows(){return staffUsers().map(u=>u.name);}
 
 // ── Projects / stages — also opt-in now, matching Leave/NB. A project or stage stays
 // visible once it has any real data even if removed from the explicit list, same
@@ -3143,7 +3143,7 @@ function leaveClashCls(ranges,colStart,colEnd,person){
   const what=canSee?hits.map(r=>`${r.type}${r.pending?' (pending)':''}`).join(', '):(solid?'On leave':'Leave request pending');
   return{cls:solid?' plan-clash':' plan-clash-pend',title:` title="${escAttr(person)} — ${escAttr(what)} this ${planView==='day'?'day':'period'}"`};
 }
-function rosterForKind(kind){return kind==='proj'?[...st.users.filter(u=>!u.deactivated),...st.placeholders]:st.users.filter(u=>!u.deactivated);}
+function rosterForKind(kind){return kind==='proj'?[...st.users.filter(u=>!u.deactivated),...st.placeholders]:staffUsers();}   // build 68: a subcontractor can still be forecast on a project
 function addPlaceholder(name,role,billable,cost,weeklyHours){
   const id='ph'+Date.now()+Math.floor(Math.random()*10000);
   st.placeholders.push({id,name,role:role||'',billable:parseFloat(billable)||0,cost:parseFloat(cost)||0,weeklyHours:parseFloat(weeklyHours)||37.5,rates:[{from:'2000-01-01',rate:parseFloat(billable)||0}],costRates:[{from:'2000-01-01',rate:parseFloat(cost)||0}]});
@@ -3596,7 +3596,7 @@ function dayTotalHrs(wk,person,day){
 // Weekdays where the regular-day total exceeds the 7.5h standard day — extra
 // hours belong on an overtime row. Flat 7.5 cap for everyone incl. part-time.
 const DAY_MAX=7.5;
-function wkDaysOver(person,wk){const out=[];for(let i=0;i<7;i++)if(dayTotalHrs(wk,person,i)>DAY_MAX+0.001)out.push(i);return out;}
+function wkDaysOver(person,wk){const out=[];if(isSubcon(person))return out;for(let i=0;i<7;i++)if(dayTotalHrs(wk,person,i)>DAY_MAX+0.001)out.push(i);return out;}
 function doSub(person,wk){if(pendingLeaveOverlapsWeek(person,wk)||wkDaysOver(person,wk).length)return;noUndo(()=>{st.submissions[`${person}||${wk}`]={at:new Date().toISOString()};save();});render();}
 // ── Timesheet weeks that need submitting (build 54) ──────────────────────────
 // ONE rule, used by every page (Joe, 7 Oct 2026). Every week from a person's
@@ -3619,6 +3619,7 @@ function tsFirstWk(person){
 }
 function tsStartWk(person){
   const u=st.users.find(x=>x.name===person);if(!u||u.deactivated)return'';
+  if(u.role==='subcontractor')return'';   // build 68: a subcontractor has no weeks that must be submitted
   const a=tsFirstWk(person);
   const b=/^\d{4}-\d{2}-\d{2}$/.test(u.startDate||'')?dateToWkDay(parseISO(u.startDate)).wk:'';
   return a&&b?(a>b?a:b):(a||b);
@@ -3635,6 +3636,7 @@ function tsWeeksDue(person){
 function tsWkState(person,wk){
   if(!canSubmit(wk))return'future';
   if(isSub(person,wk))return'submitted';
+  if(isSubcon(person))return'pending';   // build 68: open to submit whenever they choose, never overdue
   const s=tsStartWk(person);
   if(!s||wk<s)return'none';
   return isOverdue(wk)&&!pendingLeaveOverlapsWeek(person,wk)?'overdue':'pending'; // build 58: awaiting a leave decision is not overdue
@@ -3643,9 +3645,11 @@ function tsWkState(person,wk){
 function tsWkHours(person,wk){
   const u=st.users.find(x=>x.name===person);const target=(u&&u.weeklyHours)||37.5;
   const entered=wkProjHrs(wk,person)+wkLeaveHrs(wk,person)+wkNBHrs(wk,person);
+  if(u&&u.role==='subcontractor')return{entered,target:entered,remaining:0};   // build 68: any number of hours
   return{entered,target,remaining:target-entered};
 }
 function tsFillBankHols(wk,person,days){
+  if(isSubcon(person))return;   // build 68: no bank holiday hours for a subcontractor
   for(const bh of bhInWeek(days)){
     if(!getLeaveActive(wk,person).includes('Bank Holiday'))addLeaveActive(wk,person,'Bank Holiday');
     if(gL(wk,'Bank Holiday',person,bh.dayIdx)===0)sL(wk,'Bank Holiday',person,bh.dayIdx,7.5);
@@ -3716,10 +3720,19 @@ const roleIsAdmin=r=>r==='admin'||r==='director';
 // The role as the VIEWER should see it: a director is shown to everyone else as an
 // admin (every director right is an admin right, so nothing is untrue), and only
 // directors see the word Director.
-const roleLabelFor=role=>role==='director'?(isDirector()?'Director':'Admin'):role==='admin'?'Admin':role==='pm'?'Project Manager':'Member';
+const roleLabelFor=role=>role==='director'?(isDirector()?'Director':'Admin'):role==='admin'?'Admin':role==='pm'?'Project Manager':role==='subcontractor'?'Subcontractor':'Member';
 const DIRECTOR_SEED=['Joe Leach','Anne-Marie Nicholson'];
 const isPM=()=>cur()?.role==='pm';
 const isMember=()=>cur()?.role==='member';
+// Build 68: Subcontractor. An outside company working for amn (for example the PM on a P job).
+// Its own category, outside the member < pm < admin < director ladder: Home and Timesheets only,
+// only the projects it has been added to, any number of hours a week, and no staff rules (no
+// weekly hours target, overdue chasing, leave, CPD or capacity). Directors alone assign it.
+const isSubcontractor=()=>cur()?.role==='subcontractor';
+const roleIsSubcon=r=>r==='subcontractor';
+const isSubcon=name=>{const u=st.users.find(x=>x.name===name);return !!u&&u.role==='subcontractor';};
+// Everyone on payroll terms: used wherever leave, CPD, overdue or capacity is counted.
+const staffUsers=()=>st.users.filter(u=>!u.deactivated&&u.role!=='subcontractor');
 // PMs share most of an admin's day-to-day access (projects, clients, forecast,
 // reports) but not the sensitive account-level actions (rates, roles, archive,
 // delete, system recovery) — those stay admin()-gated specifically.
@@ -4168,7 +4181,8 @@ function buildApp(){
   // (Projects/Reports) | people (Team/Leave/CPD) | CRM | money (Income forecast
   // — future fee/cashflow pages join this group) | Data. Same logic per role,
   // minus the pages that role can't see.
-  const groups=isAdmin()?[['home'],['log','forecast'],['projects','reports'],['team','leave','cpd'],['crm'],['income'],['import']]
+  const groups=isSubcontractor()?[['home'],['log']]
+    :isAdmin()?[['home'],['log','forecast'],['projects','reports'],['team','leave','cpd'],['crm'],['income'],['import']]
     :isPM()?[['home'],['log','forecast'],['projects','reports'],['team','leave','cpd'],['crm']]
     :[['home'],['log','forecast'],['leave','cpd']];
   const nav=groups.flat();
@@ -4179,7 +4193,7 @@ function buildApp(){
   return`${_syncWarn}${_staleWarn}<div class="ubar">
     <div style="display:flex;align-items:center;gap:10px">
       <span style="font-size:12px;color:var(--dkgrey)">${u.name}</span>
-      ${u.role==='director'?`<span class="badge badge-info">director</span>`:u.role==='admin'?`<span class="badge badge-info">admin</span>`:u.role==='pm'?`<span class="badge badge-info">project manager</span>`:''}
+      ${u.role==='director'?`<span class="badge badge-info">director</span>`:u.role==='admin'?`<span class="badge badge-info">admin</span>`:u.role==='pm'?`<span class="badge badge-info">project manager</span>`:u.role==='subcontractor'?`<span class="badge badge-info">subcontractor</span>`:''}
       ${overdue.length?`<span class="badge badge-overdue" style="cursor:pointer" onclick="openTsDue('${jsq(u.name)}')" title="See the weeks you still need to submit">⚠ ${overdue.length} overdue</span>`:''}
       ${(st.cpdNotices||[]).filter(n=>n.person===u.name&&n.status==='pending').length?`<span class="badge badge-info" style="cursor:pointer" onclick="tab('log')" title="CPD time is waiting to be accepted into a submitted timesheet">${(st.cpdNotices||[]).filter(n=>n.person===u.name&&n.status==='pending').length} CPD to accept</span>`:''}
       ${cpdWriteupsDue(u.name).length?`<span class="badge badge-warn" style="cursor:pointer" onclick="tab('cpd')" title="CPD entries you created are missing their shared write-up — what we learned, how we're applying it, next steps">✎ ${cpdWriteupsDue(u.name).length} CPD write-up${cpdWriteupsDue(u.name).length===1?'':'s'}</span>`:''}
@@ -4277,6 +4291,7 @@ function buildLog(){
   const targetName=viewingUser||cur().name;
   const targetUser=st.users.find(u=>u.name===targetName);
   if(!targetUser)return`<div class="empty">User not found.</div>`;
+  const subcon=targetUser.role==='subcontractor';   // build 68
   const days=getWkDates(wkOff);const wk=wkKey(days);const isCur=wkOff===0;
   const isFuture=wkOff>0; // future weeks are view-only for everyone — leave arrives via the approval flow
   const sub=isSub(targetName,wk);const submittable=canSubmit(wk);const wkState=tsWkState(targetName,wk);const od=wkState==='overdue';
@@ -4301,7 +4316,7 @@ function buildLog(){
   const canCopyFromLast=prevWkProjects.size>0;
 
   // Bank holiday auto-fill
-  if(canEdit){
+  if(canEdit&&!subcon){
     const bhs=bhInWeek(days);
     for(const bh of bhs){
       const active=getLeaveActive(wk,targetName);
@@ -4311,12 +4326,12 @@ function buildLog(){
   }
 
   // Hours computation
-  const target=targetUser.weeklyHours||37.5;
+  const target=subcon?0:(targetUser.weeklyHours||37.5);
   const projHrs=wkProjHrs(wk,targetName);
   const leaveHrs=wkLeaveHrs(wk,targetName);
   const nbHrs=wkNBHrs(wk,targetName);
   const totalHrs=projHrs+leaveHrs+nbHrs;
-  const remaining=target-totalHrs;
+  const remaining=subcon?0:target-totalHrs;
   const hrsOk=Math.abs(remaining)<0.01;
   const hrsOver=remaining<-0.01;
   const hrsUnder=remaining>0.01;
@@ -4346,10 +4361,10 @@ function buildLog(){
 
   // Hours bar
   h+=`<div class="hrs-bar">
-    <div class="hrs-segment"><div class="hrs-segment-label">Required</div><div class="hrs-segment-val">${target}h${target<37.5?' <span class="badge badge-info" style="font-size:9px">Part-time</span>':''}</div></div>
+    ${subcon?'':`<div class="hrs-segment"><div class="hrs-segment-label">Required</div><div class="hrs-segment-val">${target}h${target<37.5?' <span class="badge badge-info" style="font-size:9px">Part-time</span>':''}</div></div>`}
     <div class="hrs-segment"><div class="hrs-segment-label">Project hrs</div><div class="hrs-segment-val" id="hrs-proj">${projHrs.toFixed(1)}h</div></div>
-    <div class="hrs-segment"><div class="hrs-segment-label">Leave hrs</div><div class="hrs-segment-val" id="hrs-leave">${leaveHrs>0?leaveHrs.toFixed(1)+'h':'—'}</div></div>
-    <div class="hrs-segment"><div class="hrs-segment-label">Non-billable</div><div class="hrs-segment-val" id="hrs-nb">${nbHrs>0?nbHrs.toFixed(1)+'h':'—'}</div></div>
+    ${subcon?'':`<div class="hrs-segment"><div class="hrs-segment-label">Leave hrs</div><div class="hrs-segment-val" id="hrs-leave">${leaveHrs>0?leaveHrs.toFixed(1)+'h':'—'}</div></div>
+    <div class="hrs-segment"><div class="hrs-segment-label">Non-billable</div><div class="hrs-segment-val" id="hrs-nb">${nbHrs>0?nbHrs.toFixed(1)+'h':'—'}</div></div>`}
     <div class="hrs-segment"><div class="hrs-segment-label">Total</div><div class="hrs-segment-val ${hrsOk?'ok':hrsOver?'danger':''}" id="hrs-total">${totalHrs.toFixed(1)}h</div></div>
     <div class="hrs-bar-status" id="hrs-status">${hrsStatusHTML(remaining,target,hrsOk,hrsOver)}</div>
   </div>`;
@@ -4377,6 +4392,8 @@ function buildLog(){
   </tr></thead><tbody>`;
 
   // ── Section 1: Leave ────────────────────────────────────────────────────────
+  const bhDays=new Set(bhInWeek(days).map(b=>b.dayIdx));   // build 68: hoisted, the Projects section reads it too
+  if(!subcon){   // build 68: a subcontractor has no Leave or Non-billable sections
   // Bank holiday auto-fill
   if(canEdit){
     const bhs=bhInWeek(days);
@@ -4522,6 +4539,8 @@ function buildLog(){
   }
   // Section gap
   h+=`<tr class="section-gap"><td colspan="12"></td></tr>`;
+
+  }   // end of the staff-only Leave and Non-billable sections (build 68)
 
   // ── Section 3: Projects (near-black header) ─────────────────────────────────
   const projsWithAvailableStages=canEdit?st.projects.filter(p=>{
@@ -4672,7 +4691,7 @@ function buildLog(){
 
   // ── Daily totals (regular rows only — overtime excluded). A weekday over 7.5h
 // blocks submission; the offending totals are highlighted so the cause is obvious.
-h+=`<tr class="ts-daytotal"><td colspan="2" class="left">Daily total</td>${DAY_LABELS.map((l,i)=>{const t=dayTotalHrs(wk,targetName,i);const over=t>DAY_MAX+0.001;return `<td id="ts-dt-${i}" class="${over?'over':''}" title="${over?'Over the 7.5h day — move extra hours to an overtime row':'Regular hours this day (max 7.5h — use overtime rows for more)'}">${t?t.toFixed(1):''}${over?' ⚠':''}</td>`;}).join('')}<td class="total-col" id="ts-dt-sum">${(()=>{let t=0;for(let i=0;i<7;i++)t+=dayTotalHrs(wk,targetName,i);return t?t.toFixed(1):'';})()}</td><td class="ot-col"></td><td class="del-col"></td></tr>`;
+h+=`<tr class="ts-daytotal"><td colspan="2" class="left">Daily total</td>${DAY_LABELS.map((l,i)=>{const t=dayTotalHrs(wk,targetName,i);const over=!subcon&&t>DAY_MAX+0.001;return `<td id="ts-dt-${i}" class="${over?'over':''}" title="${over?'Over the 7.5h day — move extra hours to an overtime row':'Regular hours this day (max 7.5h — use overtime rows for more)'}">${t?t.toFixed(1):''}${over?' ⚠':''}</td>`;}).join('')}<td class="total-col" id="ts-dt-sum">${(()=>{let t=0;for(let i=0;i<7;i++)t+=dayTotalHrs(wk,targetName,i);return t?t.toFixed(1):'';})()}</td><td class="ot-col"></td><td class="del-col"></td></tr>`;
 h+=`</tbody></table></div></div>`;
 
   if(isFuture){h+=`<div class="subbar"><span style="font-size:12px;color:var(--dkgrey)">This week hasn't started — timesheets for future weeks are view only. Approved leave shows booked; requested leave shows above as pending.</span></div>`;return h;}
@@ -5168,8 +5187,8 @@ function renderMilestoneChips(list){
 
 function availablePeopleForRow(kind,project,stage){
   if(kind==='proj')return rosterForKind('proj').filter(u=>!getPlanRows(project,stage).includes(u.name));
-  if(kind==='leave')return st.users.filter(u=>!u.deactivated&&!getLeaveRows().includes(u.name)&&(isAdmin()||u.name===st.currentUser));
-  return st.users.filter(u=>!u.deactivated&&!getNBRows().includes(u.name));
+  if(kind==='leave')return staffUsers().filter(u=>!getLeaveRows().includes(u.name)&&(isAdmin()||u.name===st.currentUser));
+  return staffUsers().filter(u=>!getNBRows().includes(u.name));
 }
 
 // ── "+" column — structural adds (bring in a project, a stage, or a person), kept
@@ -5425,7 +5444,7 @@ function renderOfficeWidePopover(){
   if(!officeWideState){el.innerHTML='';return;}
   const{kind,startDate,endDate,x,y}=officeWideState;
   const top=Math.max(8,Math.min(y,window.innerHeight-420)),left=Math.max(8,Math.min(x,window.innerWidth-320));
-  const people=st.users.filter(u=>!u.deactivated);
+  const people=staffUsers();
   const kindLabel=kind==='leave'?'Leave':'Non-billable';
   const typeList=kind==='leave'?LEAVE_TYPES:NB_TYPES;
   el.innerHTML=`<div class="note-popover plan-popover-lg" id="plan-popover" style="top:${top}px;left:${left}px;max-height:calc(100vh - ${top+10}px)">
@@ -5454,7 +5473,7 @@ window.applyOfficeWide=function(){
   const type=document.getElementById('ow-type-input').value;
   if(!sd||!ed||sd>ed){undoToast(sd&&ed?'The end date is before the start date.':'Choose a start and end date.');return;}
   if(!type){undoToast('Choose a type.');return;}
-  const people=st.users.filter(u=>!u.deactivated);
+  const people=staffUsers();
   for(const u of people){
     const perDay=Math.round(((u.weeklyHours||37.5)/5)*10)/10;
     writeRawRange(ow.kind,u.name,type,sd,ed,perDay);
@@ -5865,9 +5884,9 @@ function buildHealthDetail(projName){
     h+=`${proj.projNotes&&canManage()?`<div class="card" style="margin-bottom:14px"><div class="card-title">Project Notes <span style="font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--grey);font-weight:600">admins & PMs</span></div><div style="font-size:12px;line-height:1.7;white-space:pre-wrap;color:var(--blk)">${escAttr(proj.projNotes)}</div></div>`:''}`;
     if(canManage()){
       const members=projectMembersOf(proj.name);
-      const addable=st.users.filter(x=>!x.deactivated&&x.role==='member'&&!members.includes(x.name));
+      const addable=st.users.filter(x=>!x.deactivated&&(x.role==='member'||x.role==='subcontractor')&&!members.includes(x.name));
       h+=`<div class="card"><div class="card-title">Project team</div>
-        <div style="font-size:11px;color:var(--dkgrey);margin-bottom:10px">Members can only log time to projects they've been added to, and only see those projects on the Forecast. PMs and admins have access to every project automatically.</div>
+        <div style="font-size:11px;color:var(--dkgrey);margin-bottom:10px">Members and subcontractors can only log time to projects they've been added to, and members only see those projects on the Forecast. PMs and admins have access to every project automatically.</div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
           ${members.length?members.map(m=>`<span class="badge" style="display:inline-flex;align-items:center;gap:6px;font-size:11px;padding:5px 10px">${escAttr(m)}<button title="Remove from project" onclick="projMemberRemove('${jsq(proj.name)}','${jsq(m)}')" style="background:none;border:none;cursor:pointer;color:var(--danger);font-weight:700;font-size:13px;padding:0;line-height:1">×</button></span>`).join(''):'<span style="font-size:12px;color:var(--grey);font-style:italic">No members added yet.</span>'}
           ${addable.length?`<select style="font-size:11px" onchange="projMemberAdd('${jsq(proj.name)}',this.value);this.value=''"><option value="">+ Add member…</option>${addable.map(x=>`<option value="${escAttr(x.name)}">${escAttr(x.name)}</option>`).join('')}</select>`:''}
@@ -7905,8 +7924,37 @@ function homeActiveProjects(days){
   for(const[k,v]of Object.entries(st.entries)){if((parseFloat(v)||0)<=0)continue;const p=k.split('||');if(p[0]===wk)set.add(p[1]);}
   return st.projects.filter(p=>!p.archived&&set.has(p.name));
 }
+// Build 68: a subcontractor's Home is just their own week and their recent timesheets.
+function buildSubconHome(){
+  const u=cur();
+  const first=(u.name||'').split(' ')[0];
+  const hrNow=new Date().getHours();
+  const greet=hrNow<12?'Good morning':hrNow<18?'Good afternoon':'Good evening';
+  const days=getWkDates(0,7),wk=wkKey(days);
+  const mine=wkProjHrs(wk,u.name);
+  let h=pageHead(`${greet}, ${escAttr(first)}`,'home','');
+  h+=`<div style="font-size:12px;color:var(--dkgrey);margin:-6px 0 14px">${fmtLong(new Date())} · week ${fmt(days[0])} – ${fmt(days[6])}</div>`;
+  h+=`<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px"><button class="home-qa" onclick="tab('log')">Log time</button></div>`;
+  const rows=[];
+  for(let off=0;off>-6;off--){
+    const d=getWkDates(off,7),k=wkKey(d);
+    const hrs=wkProjHrs(k,u.name),sub=isSub(u.name,k);
+    if(!hrs&&!sub&&off!==0)continue;
+    rows.push(`<tr><td style="font-weight:600">${fmt(d[0])} – ${fmt(d[6])}${off===0?' <span class="badge">This week</span>':''}</td><td class="num">${hrs?hrs.toFixed(1)+'h':'—'}</td><td>${sub?'<span class="badge badge-submitted">✓ Submitted</span>':hrs?'<span class="badge badge-pending">Not yet submitted</span>':''}</td></tr>`);
+  }
+  h+=`<div class="card" style="max-width:640px"><div class="card-title">My week</div>
+    <div style="display:flex;gap:20px;flex-wrap:wrap;align-items:baseline;margin-bottom:12px">
+      <div><div class="metric-label">Logged this week</div><div class="metric-value" style="font-size:24px">${mine.toFixed(1)}h</div></div>
+      <div><div class="metric-label">Status</div><div style="font-size:13px;font-weight:600;margin-top:6px">${isSub(u.name,wk)?'Submitted':'Not yet submitted'}</div></div>
+    </div>
+    <table class="rtable"><thead><tr><th>Week</th><th class="num">Hours</th><th>Status</th></tr></thead><tbody>${rows.join('')}</tbody></table>
+    <div style="font-size:11px;color:var(--dkgrey);margin-top:10px">Log your hours for each week on the Timesheets page and press Submit when the week is done. There is no minimum or maximum number of hours.</div>
+  </div>`;
+  return h;
+}
 function buildHome(){
   const u=cur();if(!u)return'';
+  if(u.role==='subcontractor')return buildSubconHome();
   const first=(u.name||'').split(' ')[0];
   const hrNow=new Date().getHours();
   const greet=hrNow<12?'Good morning':hrNow<18?'Good afternoon':'Good evening';
@@ -8025,7 +8073,7 @@ function buildHome(){
   </div>`;
 
   if(admin){
-    const people=st.users.filter(x=>!x.deactivated);
+    const people=staffUsers();
     let rows='';
     for(const p of people){
       const{unsubmitted,overdue}=subStatus(p.name);
@@ -8057,12 +8105,13 @@ function buildTeam(){
   const days=getWkDates(teamWkOff,7);
   let h=pageHead('Team','team',isDirector()?`<button class="btn-add" onclick="openTeamAdd()">+ Add team member</button>`:'');
   const people=st.users.filter(x=>!x.deactivated);
-  // Summary strip
+  // Summary strip (build 68: subcontractors are listed below but are not part of the team's capacity)
   let totLogged=0,totCap=0,totBill=0,totOther=0,totSched=0;
   const per={};
   for(const p of people){
     const w=weekHoursFor(p.name,days),c=weekCapacityFor(p,days),sc=weekScheduledFor(p.name,days);
     per[p.name]={w,c,sc};
+    if(p.role==='subcontractor')continue;
     totLogged+=w.total;totCap+=c;totBill+=w.billable;totOther+=w.total-w.billable;totSched+=sc;
   }
   const pctB=totCap?Math.min(totBill/totCap*100,100):0,pctO=totCap?Math.min(totOther/totCap*100,Math.max(0,100-pctB)):0;
@@ -8137,7 +8186,8 @@ function buildTeamDetail(name){
           <option value="member" ${u.role==='member'?'selected':''}>Member</option>
           <option value="pm" ${u.role==='pm'?'selected':''}>Project Manager</option>
           <option value="admin" ${u.role==='admin'?'selected':''}>Admin</option>
-          <option value="director" ${u.role==='director'?'selected':''}>Director</option></select>`:`<span style="font-weight:600">${roleLabelFor(u.role)}</span>`}</td></tr>
+          <option value="director" ${u.role==='director'?'selected':''}>Director</option>
+          <option value="subcontractor" ${u.role==='subcontractor'?'selected':''}>Subcontractor</option></select>`:`<span style="font-weight:600">${roleLabelFor(u.role)}</span>`}</td></tr>
         <tr><td style="color:var(--dkgrey)">Weekly hours</td><td>${admin?`<div style="display:flex;align-items:center;gap:7px"><input type="number" class="hrs-input" value="${wh}" min="1" max="60" step="0.5" onchange="upWeekly(${i},this.value)"/><span style="font-size:12px;color:var(--dkgrey);font-weight:600">h/wk</span>${wh<37.5?'<span class="badge badge-info" style="font-size:9px">Part-time</span>':''}</div>`:`<span style="font-weight:600">${wh}h/wk</span>${wh<37.5?' <span class="badge badge-info" style="font-size:9px">Part-time</span>':''}`}</td></tr>
         ${u.startDate?`<tr><td style="color:var(--dkgrey)">Start date</td><td style="font-weight:600">${fmtLong(parseISO(u.startDate))}</td></tr>`:''}
         <tr><td style="color:var(--dkgrey)">Birthday</td><td>${(admin||cur().name===u.name)?`<input type="date" value="${escAttr(u.birthday||'')}" style="width:160px;font-size:11px;box-sizing:border-box" onchange="setUserBirthday(${i},this.value)"/>`:`<span style="font-weight:600">${u.birthday?fmtLong(parseISO(u.birthday)):'—'}</span>`}</td></tr>
@@ -8337,7 +8387,7 @@ function buildCPD(){
     </div>
     ${cpdView==='person'&&canManage()?`<select onchange="cpdSetPerson(this.value)" style="font-size:12px;height:32px">
       <option value="me" ${cpdPersonFilter==='me'?'selected':''}>Me (${escAttr(me)})</option>
-      ${st.users.filter(u=>!u.deactivated&&u.name!==me).map(u=>`<option value="${escAttr(u.name)}" ${cpdPersonFilter===u.name?'selected':''}>${escAttr(u.name)}</option>`).join('')}
+      ${staffUsers().filter(u=>u.name!==me).map(u=>`<option value="${escAttr(u.name)}" ${cpdPersonFilter===u.name?'selected':''}>${escAttr(u.name)}</option>`).join('')}
     </select>`:''}
     <div style="display:flex;align-items:center;gap:6px"><span style="font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:var(--dkgrey);font-weight:600">Year</span>
       <select onchange="cpdSetYear(this.value)" style="font-size:12px;height:32px">${years.map(y=>`<option ${y===cpdYearFilter?'selected':''}>${y}</option>`).join('')}</select></div>
@@ -8360,7 +8410,7 @@ function buildCPD(){
 function buildCPDOverview(){
   const yr=cpdYearFilter;
   const entries=st.cpd.filter(e=>parseISO(e.date).getFullYear()===yr).sort((a,b)=>a.date<b.date?1:-1);
-  const people=st.users.filter(u=>!u.deactivated).map(u=>u.name);
+  const people=staffUsers().map(u=>u.name);
   // hours per RIBA topic (an entry's hours count once per topic it covers)
   const topicHrs={};for(const t of CPD_RIBA)topicHrs[t]=0;
   for(const e of entries){const hrs=(parseFloat(e.durationHours)||0)*e.attendees.length;for(const t of (e.riba||[]))topicHrs[t]+=hrs;}
@@ -8549,7 +8599,7 @@ function renderCpdModal(){
             <div style="font-size:9.5px;color:var(--dkgrey);margin-top:4px">Ticking the equivalent RIBA topic also counts — no need to tick both.</div>
           <div style="margin-top:8px">${L('Principal Designer (Building Regs) competences — optional')}${chkGrid('cpd-pdbr',CPD_PDBR,e.pdbr||[],1)}</div>
           </div>
-          <div>${L('Who attended')}${chkGrid('cpd-att',st.users.filter(u=>!u.deactivated).map(u=>u.name),e.attendees,1)}</div>
+          <div>${L('Who attended')}${chkGrid('cpd-att',staffUsers().map(u=>u.name),e.attendees,1)}</div>
         </div>
 
         <div style="border-top:1px solid var(--mid);padding-top:14px">
@@ -9162,7 +9212,7 @@ function buildReports(){
   let compliance='';
   if(canManage()){
     compliance=`<div class="card" style="flex:1;min-width:380px"><div class="card-title">Timesheet Compliance</div><table class="rtable"><thead><tr><th>Person</th><th>Status</th><th>Unsubmitted</th><th>Overdue</th></tr></thead><tbody>`;
-    for(const u of st.users.filter(x=>!x.deactivated)){const{unsubmitted,overdue}=subStatus(u.name);compliance+=`<tr><td style="font-weight:500">${escAttr(u.name)}</td><td>${overdue.length?`<span class="badge badge-overdue" style="cursor:pointer" onclick="openTsDue('${jsq(u.name)}')" title="See the outstanding weeks">⚠ Overdue</span>`:unsubmitted.length?`<span class="badge badge-pending" style="cursor:pointer" onclick="openTsDue('${jsq(u.name)}')" title="See the outstanding weeks">Pending</span>`:`<span class="badge badge-ok">✓ Up to date</span>`}</td><td>${unsubmitted.length||'—'}</td><td>${overdue.length||'—'}</td></tr>`;}
+    for(const u of staffUsers()){const{unsubmitted,overdue}=subStatus(u.name);compliance+=`<tr><td style="font-weight:500">${escAttr(u.name)}</td><td>${overdue.length?`<span class="badge badge-overdue" style="cursor:pointer" onclick="openTsDue('${jsq(u.name)}')" title="See the outstanding weeks">⚠ Overdue</span>`:unsubmitted.length?`<span class="badge badge-pending" style="cursor:pointer" onclick="openTsDue('${jsq(u.name)}')" title="See the outstanding weeks">Pending</span>`:`<span class="badge badge-ok">✓ Up to date</span>`}</td><td>${unsubmitted.length||'—'}</td><td>${overdue.length||'—'}</td></tr>`;}
     compliance+=`</tbody></table></div>`;
   }
   h+=compliance?`<div class="card-row">${buildCustomReportForm(true)}${compliance}</div>`:buildCustomReportForm();
@@ -9588,12 +9638,13 @@ window.addU=function(){
 }
 window.rmU=function(i){if(!isDirector())return;const u=st.users[i];if(!u||u.name===st.currentUser)return;triggerDeleteUser(u.name);}
 window.upWeekly=(i,v)=>{if(!isDirector())return;const n=parseFloat(v);st.users[i].weeklyHours=(!isNaN(n)&&n>0)?n:37.5;save();}
-window.setUserRole=(i,role)=>{if(!isDirector())return;const u=st.users[i];if(!u||u.name===st.currentUser)return;if(!['director','admin','pm','member'].includes(role))return;u.role=role;save();render();}
+window.setUserRole=(i,role)=>{if(!isDirector())return;const u=st.users[i];if(!u||u.name===st.currentUser)return;if(!['director','admin','pm','member','subcontractor'].includes(role))return;u.role=role;save();render();}
 window.setUserEmail=(i,val)=>{if(!isDirector())return;const u=st.users[i];if(!u)return;const em=val.trim().toLowerCase();if(em&&st.users.find((x,j)=>j!==i&&x.email===em)){undoToast('That email is already linked to another team member.');render();return;}u.email=em;save();}
 window.setUserBirthday=(i,val)=>{const u=st.users[i];if(!u)return;if(!isDirector()&&cur().name!==u.name)return;u.birthday=val||'';save();}
 window.doSubmit=(person,wk)=>{if(!tsMayEdit(person))return;doSub(person,wk);}
 // Shared markup for the hours-bar status panel (used at render and by refreshHrsUI)
 function hrsStatusHTML(remaining,target,hrsOk,hrsOver){
+  if(!target)return`<span style="color:var(--ok);font-weight:700;font-size:13px">Log any number of hours</span>`;   // build 68: subcontractor
   return hrsOk?`<span style="color:var(--ok);font-weight:700;font-size:13px">✓ Complete</span>`
     :hrsOver?`<span style="color:var(--danger);font-weight:700;font-size:12px">⚠ ${Math.abs(remaining).toFixed(1)}h over</span><span style="font-size:11px;color:var(--dkgrey)">Use overtime for extra hours</span>`
     :`<span style="color:var(--warn);font-weight:700;font-size:12px">${remaining.toFixed(1)}h to go</span><span style="font-size:11px;color:var(--dkgrey)">of ${target}h required</span>`;
@@ -9603,9 +9654,10 @@ function hrsStatusHTML(remaining,target,hrsOk,hrsOver){
 // row — but the totals bar and Submit/Resubmit button must not go stale with it).
 function refreshHrsUI(wk,person){
   const u=st.users.find(x=>x.name===person);if(!u)return;
-  const target=u.weeklyHours||37.5;
+  const sc=u.role==='subcontractor';   // build 68
+  const target=sc?0:(u.weeklyHours||37.5);
   const projHrs=wkProjHrs(wk,person),leaveHrs=wkLeaveHrs(wk,person),nbHrs=wkNBHrs(wk,person);
-  const totalHrs=projHrs+leaveHrs+nbHrs,remaining=target-totalHrs;
+  const totalHrs=projHrs+leaveHrs+nbHrs,remaining=sc?0:target-totalHrs;
   const hrsOk=Math.abs(remaining)<0.01,hrsOver=remaining<-0.01;
   const set=(id,txt)=>{const el=document.getElementById(id);if(el)el.textContent=txt;};
   set('hrs-proj',projHrs.toFixed(1)+'h');
@@ -9624,7 +9676,7 @@ function refreshHrsUI(wk,person){
   let sumT=0;
   for(let i=0;i<7;i++){
     const c=document.getElementById('ts-dt-'+i);if(!c)continue;
-    const t=dayTotalHrs(wk,person,i);sumT+=t;const over=t>DAY_MAX+0.001;
+    const t=dayTotalHrs(wk,person,i);sumT+=t;const over=!sc&&t>DAY_MAX+0.001;
     c.textContent=t?t.toFixed(1)+(over?' ⚠':''):'';c.className=over?'over':'';
   }
   const sumEl=document.getElementById('ts-dt-sum');if(sumEl)sumEl.textContent=sumT?sumT.toFixed(1):'';
@@ -10002,7 +10054,7 @@ function renderTeamAddModal(){
         <div style="margin-bottom:12px"><label>Name</label><input id="nt-nm" placeholder="e.g. Jane Smith" style="width:100%;box-sizing:border-box"/></div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
           <div><label>Email</label><input id="nt-em" type="email" placeholder="jane@amnarchitects.co.uk" style="width:100%;box-sizing:border-box"/></div>
-          <div><label>Role</label><select id="nt-role" style="width:100%"><option value="member">Member</option><option value="pm">Project Manager</option><option value="admin">Admin</option><option value="director">Director</option></select></div>
+          <div><label>Role</label><select id="nt-role" style="width:100%"><option value="member">Member</option><option value="pm">Project Manager</option><option value="admin">Admin</option><option value="director">Director</option><option value="subcontractor">Subcontractor</option></select></div>
         </div>
         <div style="font-size:10px;color:var(--grey);margin-top:8px">Rates can be set from the team table once the person exists. The email must match the login account created in Supabase.</div>
       </div>
@@ -11883,13 +11935,15 @@ window.mobSheetOpen=function(kind,id){mobSheet={kind,id:id||null};render();}
 
 function buildMobileShell(w1,w2){
   const crmOK=canManage();
+  const subc=isSubcontractor();
   if(mobTab==='crm'&&!crmOK)mobTab='home';
+  if(subc&&mobTab!=='home'&&mobTab!=='time')mobTab='home';   // build 68
   return w1+w2+`<div class="mob">
   <div class="mob-head"><img src="${LOGO}" alt="amn" onclick="mobNav('home')"/><span class="mob-title">${({time:'Timesheet',crm:'CRM',leave:'Leave',home:'amn portal'})[mobTab]}</span><span class="mob-me">${escAttr((cur().name||'').split(' ')[0])}</span></div>
   <div class="mob-body">${mobTab==='time'?buildMobTime():mobTab==='crm'&&crmOK?buildMobCRM():mobTab==='leave'?buildMobLeave():buildMobHome()}</div>
   ${mobSheet?buildMobSheet():''}
   <nav class="mob-nav">
-    ${[['home',MOB_ICONS.home,'Home'],['time',MOB_ICONS.time,'Time'],...(crmOK?[['crm',MOB_ICONS.crm,'CRM']]:[]),['leave',MOB_ICONS.leave,'Leave']].map(([t,ico,lab])=>`<button class="${mobTab===t?'on':''}" onclick="mobNav('${t}')"><span class="mn-ico">${ico}</span>${lab}</button>`).join('')}
+    ${[['home',MOB_ICONS.home,'Home'],['time',MOB_ICONS.time,'Time'],...(crmOK?[['crm',MOB_ICONS.crm,'CRM']]:[]),...(subc?[]:[['leave',MOB_ICONS.leave,'Leave']])].map(([t,ico,lab])=>`<button class="${mobTab===t?'on':''}" onclick="mobNav('${t}')"><span class="mn-ico">${ico}</span>${lab}</button>`).join('')}
   </nav></div>`;
 }
 
@@ -11907,7 +11961,7 @@ function buildMobTime(){
   let h=`<div class="mob-wkrow"><button class="mob-wkbtn" onclick="mobWk(-1)">‹</button><div class="mw-label">${fmt(days[0])} – ${fmt(days[6])}${mobWkOff===0?' · this week':''}</div><button class="mob-wkbtn" onclick="mobWk(1)">›</button>${mobWkOff!==0?`<button class="mob-wkbtn" onclick="mobToday()">Today</button>`:''}</div>`;
   h+=`<div class="mob-days">${days.map((d,i)=>`<button class="mob-day ${i===mobDayIdx?'on':''}${isClosedDate(d)?' closed':''}" onclick="mobDaySel(${i})"><span>${['MON','TUE','WED','THU','FRI','SAT','SUN'][i]}</span><b>${d.getDate()}</b><i>${mobH(dayTotalHrs(wk,me,i))}</i></button>`).join('')}</div>`;
   const chip=isFut?'<span class="mob-chip mut">future — view only</span>':sub?(unlocked?'<span class="mob-chip warn">reopened — resubmit below</span>':'<span class="mob-chip ok">submitted</span>'):od?'<span class="mob-chip bad">overdue</span>':wkState==='none'?'<span class="mob-chip mut">not required</span>':'<span class="mob-chip warn">not submitted</span>';
-  h+=`<div class="mob-card"><div style="display:flex;align-items:center;gap:10px"><div style="flex:1;font-size:13px"><b>Week total: ${mobH(wkTotal)}h</b> <span style="color:var(--grey)">of ${tsWkHours(me,wk).target}h</span></div>${chip}</div>`;
+  h+=`<div class="mob-card"><div style="display:flex;align-items:center;gap:10px"><div style="flex:1;font-size:13px"><b>Week total: ${mobH(wkTotal)}h</b> ${isSubcontractor()?'':`<span style="color:var(--grey)">of ${tsWkHours(me,wk).target}h</span>`}</div>${chip}</div>`;
   if(nOdMob)h+=`<div style="margin-top:8px"><span class="mob-chip bad" style="cursor:pointer" onclick="mobSheetOpen('tsdue')">${nOdMob} other overdue week${nOdMob===1?'':'s'} ›</span></div>`;
   const day=days[mobDayIdx];
   h+=`<div style="font-size:11px;color:var(--grey);margin-top:6px">${fmtLong(day)}${isClosedDate(day)?(day.getDay()===0||day.getDay()===6?' · weekend':' · bank holiday'):''}</div></div>`;
@@ -11937,7 +11991,7 @@ function buildMobTime(){
   h+=`<div class="mob-card">${rows||'<div style="font-size:12px;color:var(--grey);padding:6px 0">No rows on this week\u2019s sheet yet.</div>'}`;
   if(editable){
     h+=`<button class="mob-btn sec" onclick="mobSheetOpen('addproj')">+ Add project to this week</button>`;
-    if(NB_TYPES.some(t=>!getNBActive(wk,me).includes(t)))h+=`<button class="mob-btn sec" onclick="mobSheetOpen('addnb')">+ Add non-billable time</button>`;
+    if(!isSubcontractor()&&NB_TYPES.some(t=>!getNBActive(wk,me).includes(t)))h+=`<button class="mob-btn sec" onclick="mobSheetOpen('addnb')">+ Add non-billable time</button>`;
   }
   h+=`</div>`;
   if(!isFut){
@@ -12345,6 +12399,11 @@ function mobActionsCard(){
     </div></div>`;}).join('')}</div>`;
 }
 function buildMobHome(){
+  if(isSubcontractor()){   // build 68
+    const me=cur().name,wk=nowWk();
+    const wkTotal=[0,1,2,3,4,5,6].reduce((t,i)=>t+dayTotalHrs(wk,me,i),0);
+    return `<div class="mob-card"><div class="mc-title">This week</div><div style="font-size:13px"><b>${mobH(wkTotal)}h logged</b> · ${isSub(me,wk)?'submitted':'not submitted yet'}</div><button class="mob-btn sec" onclick="mobNav('time')">Open my timesheet</button></div><div class="mob-card" style="font-size:11px;color:var(--grey)">v${APP_BUILD}</div><button class="mob-btn sec" onclick="doLogout()">Sign out</button>`;
+  }
   const me=cur().name,wk=nowWk(),year=new Date().getFullYear();
   const wkTotal=[0,1,2,3,4,5,6].reduce((t,i)=>t+dayTotalHrs(wk,me,i),0);
   let h=mobNotices();
