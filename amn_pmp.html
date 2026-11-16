@@ -109,7 +109,7 @@ body{font-family:'Figtree',sans-serif;font-size:13px;color:var(--blk);background
 .sortable{cursor:pointer;user-select:none}.sortable:hover{color:var(--blk)}
 .sort-arrow{display:inline-block;margin-left:3px;opacity:.5;font-size:9px}
 .sort-arrow.active{opacity:1;color:var(--blue)}
-input[type=text],input[type=email],input[type=password],input[type=number],input[type=date],input:not([type]),select,textarea{border:1px solid var(--mid);padding:8px 11px;font-size:13px;font-family:'Figtree',sans-serif;background:var(--wht);color:var(--blk);width:100%;outline:none;border-radius:var(--r);font-weight:400;box-sizing:border-box}
+input[type=text],input[type=email],input[type=password],input[type=number],input[type=date],input[type=month],input:not([type]),select,textarea{border:1px solid var(--mid);padding:8px 11px;font-size:13px;font-family:'Figtree',sans-serif;background:var(--wht);color:var(--blk);width:100%;outline:none;border-radius:var(--r);font-weight:400;box-sizing:border-box}
 input:focus,select:focus,textarea:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(212,74,46,.10)}
 textarea{line-height:1.6;resize:vertical;min-height:64px}
 input::placeholder,textarea::placeholder{color:var(--grey);opacity:.85}input[type=checkbox]{width:auto;accent-color:var(--accent)}
@@ -847,8 +847,8 @@ const STORE_KEY='amn_tracker_v1';
 // The newest build anyone opens records its number in the shared state
 // (st.meta.appBuild); a copy whose APP_BUILD is lower shows a "reopen from
 // your bookmark" banner. APP_VERSION_LABEL is the human-facing date, display only.
-const APP_BUILD=68;
-const APP_VERSION_LABEL='26 Oct 2026';
+const APP_BUILD=69;
+const APP_VERSION_LABEL='16 Nov 2026';
 // The portal's one door since the SharePoint copy was retired (Joe, 5 Sep 2026).
 // Both the stale-copy banner and the sidebar tooltip read from these, so the
 // address is written once. If Pages ever moves, change it here only.
@@ -10401,6 +10401,7 @@ let crmView='attention';
 let crmQ='';
 let crmFilt={rating:[],sector:'',type:'',never:false};
 let crmSort={by:'rating',dir:'asc'};
+let crmMove=null; // build 69: {cid,mode:'move'|'past'} while the move / previous-job panel is open
 let crmEditingInter=null,crmContactModal=null,crmOrgModal=null,crmEventModal=null,crmAddModal=false,crmLogModal=false,crmShowDoneOverview=false;
 let crmImp=null; // spreadsheet import in the event window: {eid,stage:'paste'|'preview',text,rows}
 let crmShowDoneActions=false,crmActionScope='mine';
@@ -10536,6 +10537,70 @@ function crmContactOrgIds(c){return c&&Array.isArray(c.orgIds)&&c.orgIds.length?
 function crmContactOrgNames(c){return crmContactOrgIds(c).map(id=>crmOrgName(id)).filter(Boolean);}
 function crmContactAtOrg(c,oid){return crmContactOrgIds(c).includes(oid);}
 function crmOrgPeople(oid){return st.crmContacts.filter(c=>crmContactAtOrg(c,oid));}
+// ── Build 69: employment history ────────────────────────────────────────────
+// A contact stays one person for life. orgIds/orgId/role/email/phone remain
+// the CURRENT job (so everything else reads them as before). Two optional
+// fields carry the history:
+//   pastJobs: [{id,orgId,orgName,role,from,to,email,phone}]  jobs they have left;
+//             from/to are 'YYYY-MM' ('' = not known); orgName is a snapshot so a
+//             deleted company still reads correctly.
+//   jobSince: {orgId:'YYYY-MM'}  month a CURRENT job started (set by a move).
+// Old records have neither and behave exactly as before.
+function crmPastJobs(c){return c&&Array.isArray(c.pastJobs)?c.pastJobs:[];}
+function crmJobSince(c,oid){return c&&c.jobSince&&typeof c.jobSince==='object'&&!Array.isArray(c.jobSince)?(c.jobSince[oid]||''):'';}
+// Was this person at this company on this date? Conversations are credited to
+// the company they were at when the conversation happened, so a move never
+// drags old conversations onto the new company's page.
+function crmWasAtOrgOn(c,oid,date){
+  if(!c||!oid)return false;const m=String(date||'').slice(0,7);
+  if(crmContactAtOrg(c,oid)){const s=crmJobSince(c,oid);if(!s||!m||s<=m)return true;}
+  return crmPastJobs(c).some(j=>j.orgId===oid&&(!m||((!j.from||j.from<=m)&&(!j.to||m<=j.to))));
+}
+function crmContactOrgsOn(c,date){const out=[];for(const oid of[...crmContactOrgIds(c),...crmPastJobs(c).map(j=>j.orgId)])if(oid&&!out.includes(oid)&&crmWasAtOrgOn(c,oid,date))out.push(oid);return out;}
+function crmEverAtOrg(c,oid){return crmContactAtOrg(c,oid)||crmPastJobs(c).some(j=>j.orgId===oid);}
+function crmFormerPeople(oid){return st.crmContacts.filter(c=>!crmContactAtOrg(c,oid)&&crmPastJobs(c).some(j=>j.orgId===oid));}
+function crmJobOrgName(j){return(j&&j.orgId&&crmOrgName(j.orgId))||(j&&j.orgName)||'';}
+const CRM_MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+function crmMonthLabel(m){m=String(m||'');if(!/^\d{4}-\d{2}$/.test(m))return'';const k=+m.slice(5)-1;return k>=0&&k<12?CRM_MON[k]+' '+m.slice(0,4):'';}
+function crmJobSpan(from,to){const f=crmMonthLabel(from),t=crmMonthLabel(to);return f&&t?(f===t?f:f+' to '+t):t?'until '+t:f?'from '+f:'dates not known';}
+function crmThisMonth(){return crmTodayISO().slice(0,7);}
+function crmJobsByRecent(c){return[...crmPastJobs(c)].sort((a,b)=>(b.to||'0000').localeCompare(a.to||'0000')||(b.from||'').localeCompare(a.from||''));}
+function crmOrgByNameOnly(name){const n=String(name||'').trim().toLowerCase();return n?st.crmOrgs.find(o=>o.name.trim().toLowerCase()===n)||null:null;}
+function crmNameList(a){return a.length<2?a.join(''):a.slice(0,-1).join(', ')+' and '+a[a.length-1];}
+// Record a move. leave: current company ids they have left; orgName: the company
+// they have joined ('' = not known). Returns an error message, or '' when done.
+function crmMoveCore(c,o){
+  const re=/^\d{4}-\d{2}$/;
+  const leave=(o.leave||[]).filter(id=>crmContactAtOrg(c,id));
+  const left=o.left||crmThisMonth(),start=o.start||left;
+  if(!re.test(left)||!re.test(start))return'Months need to be in the form 2026-11.';
+  const orgName=String(o.orgName||'').trim();
+  if(!leave.length&&!orgName)return'Tick the company they have left, or name the company they have joined.';
+  const ex=crmOrgByNameOnly(orgName);
+  if(ex&&crmContactAtOrg(c,ex.id)&&!leave.includes(ex.id))return c.name+' is already listed at '+ex.name+'.';
+  const org=orgName?crmFindOrCreateOrgByName(orgName):null;
+  if(!c.jobSince||typeof c.jobSince!=='object'||Array.isArray(c.jobSince))c.jobSince={};
+  if(!Array.isArray(c.pastJobs))c.pastJobs=[];
+  const prim=c.orgId,leftPrim=leave.includes(prim);
+  const leftNames=leave.map(id=>crmOrgName(id)).filter(Boolean);
+  for(const oid of leave){
+    c.pastJobs.push({id:crmId('cj'),orgId:oid,orgName:crmOrgName(oid),role:oid===prim?(c.role||''):'',from:c.jobSince[oid]||'',to:left,email:oid===prim?(c.email||''):'',phone:oid===prim?(c.phone||''):''});
+    delete c.jobSince[oid];
+  }
+  let ids=crmContactOrgIds(c).filter(x=>!leave.includes(x));
+  if(org){ids=[org.id,...ids.filter(x=>x!==org.id)];c.jobSince[org.id]=start;}
+  c.orgIds=ids;c.orgId=ids[0]||null;
+  const role=String(o.role||'').trim(),email=String(o.email||'').trim(),phone=String(o.phone||'').trim();
+  if(org||leftPrim)c.role=role;
+  if(leftPrim){c.email=email;c.phone=phone;}else{if(email)c.email=email;if(phone)c.phone=phone;}
+  normCrmContact(c);
+  const when=left===start?crmMonthLabel(left):'left '+crmMonthLabel(left)+', started '+crmMonthLabel(start);
+  const what=org&&leftNames.length?'Moved from '+crmNameList(leftNames)+' to '+org.name:org?'Joined '+org.name:'Left '+crmNameList(leftNames)+', new company not known';
+  const me=cur().name;
+  st.crmInteractions.push({id:crmId('ci'),date:crmTodayISO(),by:me,note:what+(org&&role?' as '+role:'')+' ('+when+')',contactIds:[c.id],orgIds:[],auto:'move',moveOrgs:[...leave,...(org?[org.id]:[])]});
+  c.updatedBy=me;c.updatedAt=crmTodayISO();
+  return'';
+}
 window.crmAddContactOrg=function(cid,name){
   const c=crmContact(cid);if(!c)return;name=String(name||'').trim();if(!name)return;
   const o=crmFindOrCreateOrgByName(name);if(!o)return;
@@ -10548,6 +10613,7 @@ window.crmRemoveContactOrg=function(cid,oid){
   const c=crmContact(cid);if(!c)return;
   c.orgIds=crmContactOrgIds(c).filter(x=>x!==oid);
   if(c.orgId===oid)c.orgId=c.orgIds[0]||null;
+  if(c.jobSince&&typeof c.jobSince==='object')delete c.jobSince[oid];
   save();render();
 };
 function normCrmOrg(o){if(!Array.isArray(o.sectors))o.sectors=[];if(!o.rating)o.rating='warm';if(typeof o.website!=='string')o.website='';}
@@ -10576,9 +10642,10 @@ function crmSyncClients(){
 
 function crmInterSort(a,b){return a.date<b.date?1:a.date>b.date?-1:String(b.id).localeCompare(String(a.id));}
 function crmContactInters(cid){return st.crmInteractions.filter(i=>i.contactIds.includes(cid)).sort(crmInterSort);}
-function crmOrgInters(oid){const ppl=crmOrgPeople(oid).map(c=>c.id);return st.crmInteractions.filter(i=>i.orgIds.includes(oid)||i.contactIds.some(c=>ppl.includes(c))).sort(crmInterSort);}
-function crmLastTouch(cid){const l=crmContactInters(cid);return l.length?l[0]:null;}
-function crmLastTouchOrg(oid){const l=crmOrgInters(oid);return l.length?l[0]:null;}
+function crmOrgInters(oid){const ppl=new Map();for(const c of st.crmContacts)if(crmEverAtOrg(c,oid))ppl.set(c.id,c);return st.crmInteractions.filter(i=>i.orgIds.includes(oid)||i.contactIds.some(x=>ppl.has(x)&&(i.auto==='move'?(i.moveOrgs||[]).includes(oid):crmWasAtOrgOn(ppl.get(x),oid,i.date)))).sort(crmInterSort);}
+// A recorded move is a note, not a conversation, so it never counts as a touch.
+function crmLastTouch(cid){const l=crmContactInters(cid).filter(i=>!i.auto);return l.length?l[0]:null;}
+function crmLastTouchOrg(oid){const l=crmOrgInters(oid).filter(i=>!i.auto);return l.length?l[0]:null;}
 function crmOpenActionsFor(kind,id){return st.crmActions.filter(a=>!a.done&&a[kind]===id);}
 function crmMyOpenActions(name){return st.crmActions.filter(a=>!a.done&&a.owner===name);}
 function crmActionOverdue(a){return!a.done&&a.due&&a.due<crmTodayISO();}
@@ -10875,7 +10942,7 @@ function renderCrmModal(){
   else if(crmEventModal!==null)el.innerHTML=crmEventModalHTML();
   else el.innerHTML='';
 }
-function crmCloseModals(){fkDrop('crm-');_crmXArm=false;crmEditingInter=null;crmContactModal=null;crmOrgModal=null;crmEventModal=null;crmImp=null;crmAddModal=false;crmLogModal=false;crmShowDoneActions=false;crmNewContactOrg=null;
+function crmCloseModals(){fkDrop('crm-');_crmXArm=false;crmEditingInter=null;crmMove=null;crmSameClose();crmContactModal=null;crmOrgModal=null;crmEventModal=null;crmImp=null;crmAddModal=false;crmLogModal=false;crmShowDoneActions=false;crmNewContactOrg=null;
   for(const id of ['crm-act-typeahead','crm-add-name-suggest']){const el=document.getElementById(id);if(el)el.style.display='none';}}
 window.crmModalClose=()=>{const did=crmLeaveCard();crmCloseModals();render();crmLeaveToast(did);};
 // Discard on the create forms: close without the card commit (there is no card).
@@ -11011,6 +11078,13 @@ window.crmSaveAdd=function(){
   const person=(val('crm-add-name')||'').trim();
   const orgName=(val('crm-add-org')||'').trim();
   if(!person&&!orgName){undoToast('Enter a person, a company, or both.');return;}
+  if(person&&!crmSameAck){
+    const on=orgName.toLowerCase(),pn=person.toLowerCase();
+    const exOrg=crmOrgByNameOnly(orgName);
+    if(st.crmContacts.some(c=>c.name.trim().toLowerCase()===pn&&(exOrg?crmContactAtOrg(c,exOrg.id):(!on&&!crmContactOrgIds(c).length)))){undoToast('That person is already in the CRM at that company.');return;}
+    const same=st.crmContacts.filter(c=>c.name.trim().toLowerCase()===pn&&!(on?crmContactOrgNames(c).some(n=>n.trim().toLowerCase()===on):!crmContactOrgIds(c).length));
+    if(same.length){crmSameOpen(same,orgName);return;}
+  }
   const sectors=[...document.querySelectorAll('.crm-add-sec:checked')].map(x=>x.value);
   const rating=val('crm-add-rating')||'warm';
   const org=orgName?crmFindOrCreateOrgByName(orgName,{sectors,rating}):null;
@@ -11088,9 +11162,10 @@ function crmContactModalHTML(){
   const orgs=[...st.crmOrgs].sort((a,b)=>a.name.localeCompare(b.name));
   let body=`${crmByLine(c)}<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px 14px;margin-bottom:12px">
     <div>${crmL('Name')}<input id="crm-c-name" value="${escAttr(c.name)}" style="width:100%;box-sizing:border-box"/></div>
-    <div>${crmL('Companies')}<div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:5px">${crmContactOrgIds(c).map(oid=>`<span class="badge" style="display:inline-flex;align-items:center;gap:5px;font-size:11px;padding:4px 8px"><a href="javascript:void(0)" onclick="crmOpenOrg('${jsq(oid)}')" style="color:inherit">${escAttr(crmOrgName(oid))}</a><button onclick="crmRemoveContactOrg('${jsq(c.id)}','${jsq(oid)}')" title="Remove from this company" style="background:none;border:none;cursor:pointer;color:var(--danger);font-weight:700;font-size:12px;padding:0;line-height:1">×</button></span>`).join('')||'<span style="font-size:11px;color:var(--grey);font-style:italic">No company yet</span>'}</div><input id="crm-c-org" list="crm-c-orgs" value="" placeholder="add a company — type to match or create" style="width:100%;box-sizing:border-box" onchange="if(this.value.trim()){const v=this.value;this.value='';crmAddContactOrg('${jsq(c.id)}',v);}"/>${crmOrgDatalist('crm-c-orgs')}<div style="font-size:10px;color:var(--dkgrey);margin-top:3px">Someone can sit at several companies at once — add each one.</div></div>
+    <div>${crmL('Companies')}<div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:5px">${crmContactOrgIds(c).map(oid=>`<span class="badge" style="display:inline-flex;align-items:center;gap:5px;font-size:11px;padding:4px 8px"><a href="javascript:void(0)" onclick="crmOpenOrg('${jsq(oid)}')" style="color:inherit">${escAttr(crmOrgName(oid))}</a>${crmJobSince(c,oid)?`<span style="opacity:.65">since ${crmMonthLabel(crmJobSince(c,oid))}</span>`:''}<button onclick="crmRemoveContactOrg('${jsq(c.id)}','${jsq(oid)}')" title="Remove from this company (for a company added by mistake; use Moved on if they have left)" style="background:none;border:none;cursor:pointer;color:var(--danger);font-weight:700;font-size:12px;padding:0;line-height:1">×</button></span>`).join('')||'<span style="font-size:11px;color:var(--grey);font-style:italic">No company yet</span>'}</div><input id="crm-c-org" list="crm-c-orgs" value="" placeholder="add a company — type to match or create" style="width:100%;box-sizing:border-box" onchange="if(this.value.trim()){const v=this.value;this.value='';crmAddContactOrg('${jsq(c.id)}',v);}"/>${crmOrgDatalist('crm-c-orgs')}<div style="font-size:10px;color:var(--dkgrey);margin-top:3px">Someone can sit at several companies at once — add each one. If they have left one, use Moved on below.</div></div>
     <div>${crmL('Job title')}<input id="crm-c-role" value="${escAttr(c.role||'')}" style="width:100%;box-sizing:border-box"/></div>
   </div>
+  ${crmJobsSection(c)}
   <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px 14px;margin-bottom:12px">
     <div>${crmL('Email')}<input id="crm-c-email" value="${escAttr(c.email||'')}" style="width:100%;box-sizing:border-box"/></div>
     <div>${crmL('Phone')}<input id="crm-c-phone" value="${escAttr(c.phone||'')}" style="width:100%;box-sizing:border-box"/></div>
@@ -11111,6 +11186,127 @@ function crmContactModalHTML(){
     <span class="fk-saved" id="crm-saved" style="margin-right:12px">${CRM_IDLE}</span><button class="btn btn-primary btn-sm" onclick="crmModalClose()">Done</button>`;
   return crmModalShell(escAttr(c.name),body,footer,0,'crm-c:'+c.id);
 }
+// Build 69: previous jobs, the Moved on panel and the add-a-previous-job panel.
+function crmJobsSection(c){
+  const jobs=crmJobsByRecent(c),open=crmMove&&crmMove.cid===c.id?crmMove.mode:'';
+  const inp=(id,ph,type,val)=>`<input id="${id}" ${type?`type="${type}"`:''} value="${escAttr(val||'')}" placeholder="${escAttr(ph||'')}" style="width:100%;box-sizing:border-box"/>`;
+  let h=`<div class="crm-jobs" style="margin:0 0 14px">`;
+  if(jobs.length){
+    h+=`${crmL('Previous jobs')}<div style="display:flex;flex-direction:column;gap:4px;margin-bottom:8px">${jobs.map(j=>{
+      const nm=crmJobOrgName(j),live=j.orgId&&crmOrg(j.orgId);
+      const det=[j.email,j.phone].filter(Boolean).map(escAttr).join(' · ');
+      return`<div class="crm-job" style="display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;font-size:12px">${live?`<a href="javascript:void(0)" onclick="crmOpenOrg('${jsq(j.orgId)}')" style="color:var(--blk);font-weight:600">${escAttr(nm)}</a>`:`<span style="font-weight:600">${escAttr(nm||'Company not known')}</span>`}${j.role?`<span style="color:var(--dkgrey)">${escAttr(j.role)}</span>`:''}<span style="color:var(--grey);font-size:11px">${crmJobSpan(j.from,j.to)}</span>${det?`<span style="color:var(--grey);font-size:11px">${det}</span>`:''}<button onclick="crmTriggerRemovePastJob('${jsq(c.id)}','${jsq(j.id)}')" title="Remove this previous job" style="background:none;border:none;cursor:pointer;color:var(--danger);font-weight:700;font-size:12px;padding:0;line-height:1">×</button></div>`;}).join('')}</div>`;
+  }
+  if(open==='move'){
+    const curIds=crmContactOrgIds(c);
+    h+=`<div class="crm-move-panel" style="border:1px solid var(--mid);background:var(--off);padding:12px 14px">
+      <div style="font-size:13px;font-weight:700;margin-bottom:8px">Record a move</div>
+      <div style="margin-bottom:10px">${crmL('Company they have left')}${curIds.length?`<div style="display:flex;gap:12px;flex-wrap:wrap">${curIds.map(oid=>`<label style="font-size:12px;display:inline-flex;align-items:center;gap:5px"><input type="checkbox" class="crm-mv-leave" value="${escAttr(oid)}" ${oid===c.orgId?'checked':''} style="margin:0"/>${escAttr(crmOrgName(oid))}</label>`).join('')}</div>`:`<div style="font-size:11px;color:var(--grey);font-style:italic">No current company on their record.</div>`}</div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px 14px;margin-bottom:10px">
+        <div>${crmL('Left in')}${inp('crm-mv-left','2026-11','month',crmThisMonth())}</div>
+        <div>${crmL('Company they have joined')}<input id="crm-mv-org" list="crm-mv-orgs" value="" placeholder="type to match or create; blank if not known" style="width:100%;box-sizing:border-box"/>${crmOrgDatalist('crm-mv-orgs')}</div>
+        <div>${crmL('New job title')}${inp('crm-mv-role','')}</div>
+        <div>${crmL('Started in')}${inp('crm-mv-start','2026-11','month',crmThisMonth())}</div>
+        <div>${crmL('New email')}${inp('crm-mv-email','')}</div>
+        <div>${crmL('New direct phone')}${inp('crm-mv-phone','')}</div>
+      </div>
+      <div style="font-size:10.5px;color:var(--dkgrey);margin-bottom:10px;line-height:1.5">Their current job title, email and phone are kept with the job they have left. Mobile, LinkedIn, rating, owner, sectors, links and all conversations stay with them. Past conversations stay on the old company's page.</div>
+      <div style="display:flex;gap:8px;justify-content:flex-end"><button class="btn btn-sm" onclick="crmMoveCancel()">Cancel</button><button class="btn btn-primary btn-sm" onclick="crmRecordMove('${jsq(c.id)}')">Record move</button></div>
+    </div>`;
+  }else if(open==='past'){
+    h+=`<div class="crm-move-panel" style="border:1px solid var(--mid);background:var(--off);padding:12px 14px">
+      <div style="font-size:13px;font-weight:700;margin-bottom:8px">Add a previous job</div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px 14px;margin-bottom:10px">
+        <div>${crmL('Company')}<input id="crm-mv-org" list="crm-mv-orgs" value="" placeholder="type to match or create" style="width:100%;box-sizing:border-box"/>${crmOrgDatalist('crm-mv-orgs')}</div>
+        <div>${crmL('Job title')}${inp('crm-mv-role','')}</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px"><div>${crmL('From')}${inp('crm-mv-from','2020-01','month','')}</div><div>${crmL('To')}${inp('crm-mv-to','2024-06','month','')}</div></div>
+        <div>${crmL('Email there')}${inp('crm-mv-email','')}</div>
+        <div>${crmL('Phone there')}${inp('crm-mv-phone','')}</div>
+      </div>
+      <div style="font-size:10.5px;color:var(--dkgrey);margin-bottom:10px">Leave a month blank if you don't know it.</div>
+      <div style="display:flex;gap:8px;justify-content:flex-end"><button class="btn btn-sm" onclick="crmMoveCancel()">Cancel</button><button class="btn btn-primary btn-sm" onclick="crmAddPastJob('${jsq(c.id)}')">Add job</button></div>
+    </div>`;
+  }else{
+    h+=`<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><button class="btn btn-sm" onclick="crmMoveOpen('${jsq(c.id)}','move')">Moved on…</button><button class="btn btn-sm" onclick="crmMoveOpen('${jsq(c.id)}','past')">+ Add a previous job</button><span style="font-size:10px;color:var(--dkgrey)">When someone changes job, use Moved on so their history and conversations stay together.</span></div>`;
+  }
+  return h+`</div>`;
+}
+const CRM_MV_IDS=['crm-mv-left','crm-mv-org','crm-mv-role','crm-mv-start','crm-mv-email','crm-mv-phone','crm-mv-from','crm-mv-to'];
+window.crmMoveOpen=function(cid,mode){crmCommitCard(false,true);crmMove={cid,mode};render();try{const el=document.querySelector('.crm-move-panel');if(el&&el.scrollIntoView)el.scrollIntoView({block:'nearest'});}catch(e){}};
+window.crmMoveCancel=function(){crmMove=null;render();};
+window.crmRecordMove=function(cid){
+  const c=crmContact(cid);if(!c)return;
+  const g=id=>{const e=document.getElementById(id);return e?(e.value||'').trim():'';};
+  const leave=[...document.querySelectorAll('.crm-mv-leave')].filter(x=>x.checked).map(x=>x.value);
+  const opts={leave,left:g('crm-mv-left'),start:g('crm-mv-start'),orgName:g('crm-mv-org'),role:g('crm-mv-role'),email:g('crm-mv-email'),phone:g('crm-mv-phone')};
+  crmCommitCard(false,true);
+  const err=crmMoveCore(c,opts);
+  if(err){undoToast(err);return;}
+  crmMove=null;save();render();
+  undoToast('Move recorded for '+c.name+'. Their previous job is kept in their history.');
+};
+window.crmAddPastJob=function(cid){
+  const c=crmContact(cid);if(!c)return;
+  const g=id=>{const e=document.getElementById(id);return e?(e.value||'').trim():'';};
+  const name=g('crm-mv-org'),from=g('crm-mv-from'),to=g('crm-mv-to'),re=/^\d{4}-\d{2}$/;
+  if(!name){undoToast('Name the company first.');return;}
+  if((from&&!re.test(from))||(to&&!re.test(to))){undoToast('Months need to be in the form 2026-11.');return;}
+  if(from&&to&&from>to){undoToast('The start month is after the end month.');return;}
+  crmCommitCard(false,true);
+  const o=crmFindOrCreateOrgByName(name);if(!o)return;
+  if(!Array.isArray(c.pastJobs))c.pastJobs=[];
+  c.pastJobs.push({id:crmId('cj'),orgId:o.id,orgName:o.name,role:g('crm-mv-role'),from,to,email:g('crm-mv-email'),phone:g('crm-mv-phone')});
+  c.updatedBy=cur().name;c.updatedAt=crmTodayISO();
+  crmMove=null;save();render();
+  undoToast('Previous job at '+o.name+' added.');
+};
+window.crmTriggerRemovePastJob=function(cid,jid){
+  const c=crmContact(cid),j=c?crmPastJobs(c).find(x=>x.id===jid):null;if(!j)return;
+  openConfirmModal('Remove previous job','Are you sure you want to remove '+escAttr(crmJobOrgName(j)||'this job')+' from '+escAttr(c.name)+'’s previous jobs?','','crmRemovePastJob',[cid,jid]);
+};
+window.crmRemovePastJob=function(cid,jid){
+  const c=crmContact(cid);if(!c||!Array.isArray(c.pastJobs))return;
+  c.pastJobs=c.pastJobs.filter(x=>x.id!==jid);
+  c.updatedBy=cur().name;c.updatedAt=crmTodayISO();save();render();
+};
+// "Same person?" — adding a name that is already in the CRM at another company
+// asks first, so a move is recorded on the existing card rather than as a
+// duplicate. Drawn straight into the confirm container so the Add form behind
+// keeps everything typed in it.
+let crmSameAck=false;
+function crmSameClose(){const el=document.getElementById('confirm-modal-container');if(el&&el.querySelector('.crm-same'))el.innerHTML='';}
+function crmSameOpen(same,orgName){
+  const el=document.getElementById('confirm-modal-container');if(!el)return;
+  const nm=escAttr(same[0].name);
+  el.innerHTML=`<div class="modal-overlay crm-same" style="z-index:500" onclick="if(event.target===this)crmSameClose()">
+    <div class="modal-box" onclick="event.stopPropagation()" style="max-width:520px">
+      <div class="note-popover-hdr"><span>Same person?</span><button onclick="crmSameClose()" style="background:none;border:none;cursor:pointer;font-size:14px;font-weight:700;color:var(--dkgrey)">×</button></div>
+      <div style="padding:16px">
+        <p style="font-size:13px;color:var(--dkgrey);margin:0 0 12px;line-height:1.5">${same.length===1?`${nm} is already in the CRM`:`There are already ${same.length} people called ${nm} in the CRM`}. If ${same.length===1?'this is them':'this is one of them'}, use their existing card so their history stays in one place.</p>
+        ${same.map(c=>{const co=crmContactOrgNames(c).join(', ');return`<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:8px 0;border-top:1px solid var(--mid)"><div style="flex:1;min-width:160px;font-size:12px"><b>${escAttr(c.name)}</b><div style="color:var(--dkgrey);font-size:11px">${co?escAttr(co):'no current company'}${c.role?' · '+escAttr(c.role):''}</div></div>${orgName?`<button class="btn btn-primary btn-sm" onclick="crmSameMove('${jsq(c.id)}')">Moved to ${escAttr(orgName)}</button>`:''}<button class="btn btn-sm" onclick="crmSameOpenCard('${jsq(c.id)}')">Open their card</button></div>`;}).join('')}
+      </div>
+      <div class="note-popover-footer"><button class="btn btn-sm" onclick="crmSameClose()">Cancel</button><button class="btn btn-sm" onclick="crmSameNew()">No, add a new person</button></div>
+    </div>
+  </div>`;
+}
+window.crmSameClose=crmSameClose;
+window.crmSameNew=function(){crmSameClose();crmSameAck=true;try{crmSaveAdd();}finally{crmSameAck=false;}};
+window.crmSameOpenCard=function(cid){crmSameClose();crmCloseModals();crmContactModal=cid;render();};
+window.crmSameMove=function(cid){
+  const c=crmContact(cid);if(!c)return;
+  const val=id=>{const el=document.getElementById(id);return el?(el.value||'').trim():'';};
+  const me=cur().name;
+  const err=crmMoveCore(c,{leave:c.orgId?[c.orgId]:[],orgName:val('crm-add-org'),role:val('crm-add-role'),email:val('crm-add-email'),phone:val('crm-add-phone')});
+  if(err){undoToast(err);return;}
+  const mob=val('crm-add-mobile'),li=val('crm-add-linkedin');
+  if(mob&&!c.mobile)c.mobile=mob;if(li&&!c.linkedin)c.linkedin=li;
+  const noteTxt=val('crm-add-note');
+  if(noteTxt)st.crmInteractions.push({id:crmId('ci'),date:val('crm-add-note-date')||crmTodayISO(),by:me,note:noteTxt,contactIds:[c.id],orgIds:[]});
+  const actTxt=val('crm-add-act');
+  if(actTxt)crmActionCore('contact',c.id,actTxt,val('crm-add-act-due'));
+  crmSameClose();crmCloseModals();crmContactModal=c.id;save();render();
+  undoToast('Move recorded on '+c.name+'’s existing card'+(noteTxt?' · conversation logged':'')+(actTxt?' · action added':'')+'.');
+};
 function crmLinksSection(c){
   const others=st.crmContacts.filter(x=>x.id!==c.id).sort((a,b)=>a.name.localeCompare(b.name));
   let h=`<div class="fsec">${crmT('Knows / connected to')}`;
@@ -11350,12 +11546,21 @@ function crmOrgModalHTML(){
   body+=`<div style="border-top:1px solid var(--mid);padding-top:14px;margin-bottom:16px">${crmL('People here')}
     ${ppl.length?`<div style="display:flex;flex-direction:column;gap:4px;margin-bottom:8px">${ppl.map(p=>`<div style="display:flex;gap:8px;align-items:baseline;font-size:12px"><a href="javascript:void(0)" onclick="crmOpenContact('${jsq(p.id)}')" style="color:var(--blk);font-weight:600">${escAttr(p.name)}</a><span style="color:var(--dkgrey);font-size:11px">${escAttr(p.role||p.type||'')}</span>${crmRateBadge(p.rating)}</div>`).join('')}</div>`:`<div style="font-size:11px;color:var(--grey);font-style:italic;margin-bottom:8px">No contact yet — this company is on the cold-call list.</div>`}
     <button class="btn btn-sm" onclick="crmOpenNewContactAt('${jsq(o.id)}')">+ Add a contact here</button>
+    ${crmFormerPeopleHTML(o.id)}
   </div>`;
   body+=crmTimelineSection('org',o)+crmActionsSection('org',o.id);
   const delDisabled=ppl.length>0;
   const footer=`${canManage()?`<span style="margin-right:auto;display:inline-flex;align-items:center;gap:8px" ${delDisabled?'title="A company can\'t be deleted while it still has people — open each contact and move or delete them first"':''}><button class="btn btn-danger btn-sm" ${delDisabled?'disabled':''} onclick="crmTriggerDeleteOrg('${jsq(o.id)}')">Delete company</button>${delDisabled?`<span style="font-size:10px;color:var(--grey)">has ${ppl.length} ${ppl.length===1?'person':'people'} — move or delete them first</span>`:''}</span>`:''}
     <span class="fk-saved" id="crm-saved" style="margin-right:12px">${CRM_IDLE}</span><button class="btn btn-primary btn-sm" onclick="crmModalClose()">Done</button>`;
   return crmModalShell(escAttr(o.name)+(client&&nProj?' <span class="badge badge-ok" style="margin-left:8px">Active client</span>':''),body,footer,0,'crm-o:'+o.id);
+}
+function crmFormerPeopleHTML(oid){
+  const ppl=crmFormerPeople(oid).sort((a,b)=>a.name.localeCompare(b.name));
+  if(!ppl.length)return'';
+  return`<details class="crm-former" style="margin-top:12px"><summary style="cursor:pointer;font-size:11.5px;color:var(--dkgrey);font-weight:600">Former people (${ppl.length})</summary><div style="display:flex;flex-direction:column;gap:4px;margin-top:8px">${ppl.map(p=>{
+    const j=crmJobsByRecent(p).find(x=>x.orgId===oid)||{};
+    const now=crmContactOrgIds(p);
+    return`<div style="display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;font-size:12px"><a href="javascript:void(0)" onclick="crmOpenContact('${jsq(p.id)}')" style="color:var(--blk);font-weight:600">${escAttr(p.name)}</a>${j.role?`<span style="color:var(--dkgrey);font-size:11px">${escAttr(j.role)}</span>`:''}<span style="color:var(--grey);font-size:11px">${crmJobSpan(j.from,j.to)}</span><span style="font-size:11px">${now.length?`now at ${now.map(id=>`<a href="javascript:void(0)" onclick="crmOpenOrg('${jsq(id)}')" style="color:var(--accent)">${escAttr(crmOrgName(id))}</a>`).join(', ')}`:'<span style="color:var(--grey)">now: not known</span>'}</span>${crmRateBadge(p.rating)}</div>`;}).join('')}</div></details>`;
 }
 window.crmSaveOrg=function(){
   const o=crmOrg(crmOrgModal);if(!o)return;
@@ -11884,10 +12089,10 @@ window.crmExportAllCSV=function(){
   for(const o of[...st.crmOrgs].sort((a,b)=>a.name.localeCompare(b.name)))
     rows.push(['Company','',''+'',o.name,'',o.sectors.join('; '),CRM_RATE_LABEL[crmOrgRating(o)]||'','',crmIsActiveClient(o)?'Active client':'','',o.notes||'',o.website||''].map(crmCsv).join(','));
   for(const c of[...st.crmContacts].sort((a,b)=>a.name.localeCompare(b.name)))
-    rows.push(['Person',c.createdAt||'',c.name,crmContactOrgNames(c).join('; '),c.type||'',c.sectors.join('; '),CRM_RATE_LABEL[c.rating]||'',c.owner||'','','',c.role||'',[c.email,c.phone,c.mobile,c.linkedin,c.source].filter(Boolean).join(' · ')].map(crmCsv).join(','));
+    rows.push(['Person',c.createdAt||'',c.name,crmContactOrgNames(c).join('; '),c.type||'',c.sectors.join('; '),CRM_RATE_LABEL[c.rating]||'',c.owner||'','','',c.role||'',[c.email,c.phone,c.mobile,c.linkedin,c.source,crmPastJobs(c).length?'Previously: '+crmJobsByRecent(c).map(j=>crmJobOrgName(j)+(j.role?', '+j.role:'')+' ('+crmJobSpan(j.from,j.to)+')').join('; '):''].filter(Boolean).join(' · ')].map(crmCsv).join(','));
   for(const i of[...st.crmInteractions].sort((a,b)=>a.date<b.date?-1:1)){
     const names=i.contactIds.map(id=>(crmContact(id)||{}).name).filter(Boolean).join('; ');
-    const orgs=[...new Set([...i.orgIds.map(id=>crmOrgName(id)),...i.contactIds.map(id=>crmOrgName((crmContact(id)||{}).orgId))])].filter(Boolean).join('; ');
+    const orgs=[...new Set([...i.orgIds.map(id=>crmOrgName(id)),...(i.auto==='move'?(i.moveOrgs||[]).map(id=>crmOrgName(id)):i.contactIds.flatMap(id=>{const k=crmContact(id);return k?crmContactOrgsOn(k,i.date).map(crmOrgName):[];}))])].filter(Boolean).join('; ');
     rows.push(['Conversation',i.date,names,orgs,'','','',i.by||'','','',i.note,''].map(crmCsv).join(','));
   }
   for(const a of st.crmActions){
@@ -12038,7 +12243,7 @@ window.mobAddRow=function(pn,stg){
 
 // ── CRM ──────────────────────────────────────────────────────────────────────
 const MOB_RATE_EDGE={hot:'#C0392B',warm:'#DFA64F',cold:'#7FA8C9',dormant:'#C9C3BA'};
-function mobCrmLastTouch(cid){let best=null;for(const i of st.crmInteractions){if((i.contactIds||[]).includes(cid)&&(!best||i.date>best.date))best=i;}return best;}
+function mobCrmLastTouch(cid){let best=null;for(const i of st.crmInteractions){if(!i.auto&&(i.contactIds||[]).includes(cid)&&(!best||i.date>best.date))best=i;}return best;}
 window.mobCrmSearch=function(el){
   mobCrmQ=el.value;
   const box=document.getElementById('mob-crm-list');
@@ -12124,6 +12329,7 @@ function buildMobContact(id){
   let h=`<button class="mob-btn sec" style="margin:0 0 10px;width:auto;padding:8px 16px" onclick="mobCrmBack()">‹ All contacts</button>`;
   h+=`<div class="mob-card"><div style="font-size:17px;font-weight:700">${escAttr(c.name)}</div>
     <div style="font-size:12px;color:var(--dkgrey);margin-top:2px">${o?escAttr(o.name):''}${c.role?` · ${escAttr(c.role)}`:''}${c.type?` · ${escAttr(c.type)}`:''}</div>
+    ${crmPastJobs(c).length?`<div style="font-size:11px;color:var(--grey);margin-top:3px">Previously ${crmJobsByRecent(c).slice(0,2).map(j=>escAttr(crmJobOrgName(j))+(j.to?' (until '+crmMonthLabel(j.to)+')':'')).join(', ')}${crmPastJobs(c).length>2?' and more':''}</div>`:''}
     <div style="margin-top:9px">${['hot','warm','cold','dormant'].map(r=>`<button class="mob-chip ${c.rating===r?'':'mut'}" style="margin-right:5px;border:none;cursor:pointer;font-family:inherit;${c.rating===r?`background:${MOB_RATE_EDGE[r]}22;color:${MOB_RATE_EDGE[r]}`:''}" onclick="mobCrmRate('${jsq(c.id)}','${r}')">${CRM_RATE_LABEL[r]}</button>`).join('')}</div>
     <div style="margin-top:10px">
       ${c.phone?`<a class="mob-tel" href="tel:${escAttr(c.phone)}">📞 ${escAttr(c.phone)}</a>`:''}
